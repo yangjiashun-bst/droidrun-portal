@@ -30,7 +30,7 @@ class DroidrunPortalService : AccessibilityService() {
         private const val FADE_DURATION_MS = 60000L // Time to fade from weight 1.0 to 0.0 (60 seconds)
         private const val VISUALIZATION_REFRESH_MS = 250L // How often to refresh visualization (250ms = 4 times per second)
         private const val MIN_DISPLAY_WEIGHT = 0.2f // Minimum weight to display elements
-        private const val SAME_TIME_THRESHOLD_MS = 300L // Elements appearing within this time window are considered "same time"
+        private const val SAME_TIME_THRESHOLD_MS = 500L // Elements appearing within this time window are considered "same time"
         
         // Color for heatmap (we'll use a gradient from RED to BLUE based on weight)
         private val NEW_ELEMENT_COLOR = Color.RED         // Newest elements
@@ -38,14 +38,11 @@ class DroidrunPortalService : AccessibilityService() {
         
         // Intent actions for ADB communication
         const val ACTION_GET_ELEMENTS = "com.example.droidrun.GET_ELEMENTS"
-        const val ACTION_GET_INTERACTIVE_ELEMENTS = "com.example.droidrun.GET_INTERACTIVE_ELEMENTS"
         const val ACTION_ELEMENTS_RESPONSE = "com.example.droidrun.ELEMENTS_RESPONSE"
         const val ACTION_TOGGLE_OVERLAY = "com.example.droidrun.TOGGLE_OVERLAY"
-        const val ACTION_TOGGLE_INTERACTIVE_ONLY = "com.example.droidrun.TOGGLE_INTERACTIVE_ONLY"
         const val ACTION_RETRIGGER_ELEMENTS = "com.example.droidrun.RETRIGGER_ELEMENTS"
         const val EXTRA_ELEMENTS_DATA = "elements_data"
         const val EXTRA_OVERLAY_VISIBLE = "overlay_visible"
-        const val EXTRA_INTERACTIVE_ONLY = "interactive_only"
     }
     
     private lateinit var overlayManager: OverlayManager
@@ -57,7 +54,6 @@ class DroidrunPortalService : AccessibilityService() {
     private val isProcessing = AtomicBoolean(false)
     private var currentPackageName: String = "" // Track current app package
     private var overlayVisible = true // Track if overlay is visible
-    private var showInteractiveOnly = false // Track if we should only show interactive elements
     
     // Track currently displayed elements (after filtering)
     private val displayedElements = mutableListOf<Pair<ElementNode, Float>>()
@@ -67,10 +63,7 @@ class DroidrunPortalService : AccessibilityService() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
                 ACTION_GET_ELEMENTS -> {
-                    broadcastElementData(false)
-                }
-                ACTION_GET_INTERACTIVE_ELEMENTS -> {
-                    broadcastElementData(true)
+                    broadcastElementData()
                 }
                 ACTION_TOGGLE_OVERLAY -> {
                     val shouldShow = intent.getBooleanExtra(EXTRA_OVERLAY_VISIBLE, !overlayVisible)
@@ -81,23 +74,6 @@ class DroidrunPortalService : AccessibilityService() {
                         overlayManager.hideOverlay()
                         overlayVisible = false
                     }
-                }
-                ACTION_TOGGLE_INTERACTIVE_ONLY -> {
-                    showInteractiveOnly = intent.getBooleanExtra(EXTRA_INTERACTIVE_ONLY, !showInteractiveOnly)
-                    if (overlayVisible) {
-                        updateVisualization()
-                    }
-                    
-                    // Update OverlayManager's interactive only setting
-                    if (isInitialized) {
-                        overlayManager.setInteractiveOnly(showInteractiveOnly)
-                    }
-                    
-                    // Send response broadcast to update app UI
-                    val responseIntent = Intent(ACTION_ELEMENTS_RESPONSE).apply {
-                        putExtra(EXTRA_INTERACTIVE_ONLY, showInteractiveOnly)
-                    }
-                    sendBroadcast(responseIntent)
                 }
                 ACTION_RETRIGGER_ELEMENTS -> {
                     retriggerElements()
@@ -113,9 +89,7 @@ class DroidrunPortalService : AccessibilityService() {
             // Register broadcast receiver for commands
             val intentFilter = IntentFilter().apply {
                 addAction(ACTION_GET_ELEMENTS)
-                addAction(ACTION_GET_INTERACTIVE_ELEMENTS)
                 addAction(ACTION_TOGGLE_OVERLAY)
-                addAction(ACTION_TOGGLE_INTERACTIVE_ONLY)
                 addAction(ACTION_RETRIGGER_ELEMENTS)
             }
             registerReceiver(broadcastReceiver, intentFilter)
@@ -202,13 +176,9 @@ class DroidrunPortalService : AccessibilityService() {
         if (!isInitialized || visibleElements.isEmpty()) return
         
         try {
-            // Get the elements to display based on the current mode
-            val elementsToProcess = if (showInteractiveOnly) {
-                getInteractiveElements()
-            } else {
-                visibleElements.map { element -> 
-                    Pair(element, element.calculateWeight())
-                }
+            // Process all visible elements
+            val elementsToProcess = visibleElements.map { element -> 
+                Pair(element, element.calculateWeight())
             }
             
             // Filter by weight and sort
@@ -252,13 +222,11 @@ class DroidrunPortalService : AccessibilityService() {
                 
                 for ((element, weight) in sortedElements) {
                     val heatmapColor = calculateHeatmapColor(weight)
-                    val weightStr = String.format("%.2f", weight)
-                    val ageSeconds = ((System.currentTimeMillis() - element.creationTime) / 1000)
                     
                     overlayManager.addElement(
                         rect = element.rect,
                         type = "${element.className}", 
-                        text = "${element.text} (w:${weightStr}, age:${ageSeconds}s)",
+                        text = element.text,
                         depth = element.windowLayer,
                         color = heatmapColor
                     )
@@ -273,7 +241,7 @@ class DroidrunPortalService : AccessibilityService() {
                 displayedElements.addAll(sortedElements)
             }
             
-            Log.d(TAG, "Updated visualization with ${sortedElements.size} elements (interactive only: $showInteractiveOnly)")
+            Log.d(TAG, "Updated visualization with ${sortedElements.size} elements")
         } catch (e: Exception) {
             Log.e(TAG, "Error updating visualization: ${e.message}", e)
         }
@@ -518,36 +486,64 @@ class DroidrunPortalService : AccessibilityService() {
         val visibleWeightElements = elementsWithWeights
             .filter { (_, weight) -> weight > MIN_DISPLAY_WEIGHT }
             
-        val weightSortedElements = visibleWeightElements
-            .sortedByDescending { (_, weight) -> weight }
+        // Constants for stability
+        val STABILITY_THRESHOLD_MS = 2000L // Time threshold before a new element replaces an old one (increased for stability)
+        val now = System.currentTimeMillis()
         
-        val elementsToDisplay = mutableListOf<Pair<ElementNode, Float>>()
+        // First, sort by creation time (newest first)
+        val elementsByRecency = visibleWeightElements.sortedByDescending { (element, _) -> element.creationTime }
         
-        for (currentElement in weightSortedElements) {
+        // We'll build a result set that only contains non-overlapping elements
+        val finalElements = mutableListOf<Pair<ElementNode, Float>>()
+        
+        // For each element (starting from newest)
+        for (currentElement in elementsByRecency) {
             val (element, weight) = currentElement
             
-            val overlappingElements = elementsToDisplay.filter { (existingElement, _) ->
+            // Check if this element overlaps with any elements already in our final list
+            val overlappingElements = finalElements.filter { (existingElement, _) ->
                 element.overlaps(existingElement)
             }
             
             if (overlappingElements.isEmpty()) {
-                elementsToDisplay.add(currentElement)
+                // No overlap with existing elements, add it
+                finalElements.add(currentElement)
+                continue
+            }
+            
+            // If elements appeared at nearly the same time (within SAME_TIME_THRESHOLD_MS),
+            // display both even if they overlap
+            val allWithinThreshold = overlappingElements.all { (existingElement, _) ->
+                Math.abs(existingElement.creationTime - element.creationTime) <= SAME_TIME_THRESHOLD_MS
+            }
+            
+            if (allWithinThreshold) {
+                // If all overlapping elements appeared around the same time as this one,
+                // keep them all (they likely belong to the same UI component group)
+                finalElements.add(currentElement)
+                Log.d(TAG, "Keeping overlapping element '${element.text}' because it appeared at nearly the same time as others")
+                continue
+            }
+            
+            // Otherwise, follow the normal replacement logic
+            val oldestOverlappingTime = overlappingElements.minByOrNull { it.first.creationTime }?.first?.creationTime ?: Long.MAX_VALUE
+            
+            if ((element.creationTime - oldestOverlappingTime) > STABILITY_THRESHOLD_MS) {
+                // This element is significantly newer (by our threshold) than what it overlaps
+                // Remove all older elements it overlaps with
+                for (overlap in overlappingElements) {
+                    finalElements.remove(overlap)
+                    Log.d(TAG, "Replaced older element '${overlap.first.text}' with newer element '${element.text}'")
+                }
+                // Add this element
+                finalElements.add(currentElement)
             } else {
-                val showDespiteOverlap = overlappingElements.any { (existingElement, _) ->
-                    val timeDiff = Math.abs(existingElement.creationTime - element.creationTime)
-                    timeDiff <= SAME_TIME_THRESHOLD_MS
-                }
-                
-                if (showDespiteOverlap) {
-                    elementsToDisplay.add(currentElement)
-                    Log.d(TAG, "Including overlapping element ${element.text} that appeared at same time")
-                } else {
-                    Log.d(TAG, "Skipping overlapped element: ${element.text} (weight: $weight)")
-                }
+                // Not significantly newer, skip it to maintain stability
+                Log.d(TAG, "Skipping element '${element.text}' to maintain stability (overlaps existing elements)")
             }
         }
         
-        val sortedElements = elementsToDisplay.sortedWith(
+        val sortedElements = finalElements.sortedWith(
             compareBy<Pair<ElementNode, Float>> { it.first.windowLayer }
                 .thenByDescending { it.second }
         )
@@ -628,7 +624,6 @@ class DroidrunPortalService : AccessibilityService() {
                     // Send initial state to the MainActivity
                     val responseIntent = Intent(ACTION_ELEMENTS_RESPONSE).apply {
                         putExtra(EXTRA_OVERLAY_VISIBLE, overlayVisible)
-                        putExtra(EXTRA_INTERACTIVE_ONLY, showInteractiveOnly)
                     }
                     sendBroadcast(responseIntent)
                 }
@@ -638,14 +633,17 @@ class DroidrunPortalService : AccessibilityService() {
         }, 1000)
     }
 
-    private fun broadcastElementData(onlyInteractive: Boolean) {
+    private fun broadcastElementData() {
         try {
-            val elementsToProcess = if (onlyInteractive) {
-                getInteractiveElements()
-            } else {
-                visibleElements.map { element -> 
-                    Pair(element, element.calculateWeight())
-                }
+            // Check if we need to ensure elements have indexes
+            if (isInitialized) {
+                // Log current state of the elements in the overlay manager
+                val currentElementCount = overlayManager.getElementCount()
+                Log.e("DROIDRUN_DEBUG", "Current elements in overlay manager: $currentElementCount")
+            }
+            
+            val elementsToProcess = visibleElements.map { element -> 
+                Pair(element, element.calculateWeight())
             }
 
             val significantElements = elementsToProcess.filter { (_, weight) -> 
@@ -661,13 +659,19 @@ class DroidrunPortalService : AccessibilityService() {
             }
             Log.e("DROIDRUN_TEXT", "======= ELEMENT TEXT LIST END =======")
             
+            Log.e("DROIDRUN_INDEX", "======= ELEMENT INDEX MAPPING START =======")
             for ((element, weight) in significantElements) {
+                // Get the element's index from the overlay manager
+                val index = overlayManager.getElementIndex(element.rect, element.text)
+                Log.e("DROIDRUN_INDEX", "Element: '${element.text}', Bounds: ${element.rect}, Index: $index")
+                
                 val elementJson = JSONObject().apply {
                     // Always include essential text property
                     put("text", element.text)
                     put("className", element.className)
                     put("bounds", "${element.rect.left},${element.rect.top},${element.rect.right},${element.rect.bottom}")
                     put("weight", weight)
+                    put("index", index) // Add the index number
                     
                     // Interactive properties are always important
                     if (element.nodeInfo.isClickable) {
@@ -687,6 +691,7 @@ class DroidrunPortalService : AccessibilityService() {
                 }
                 elementsArray.put(elementJson)
             }
+            Log.e("DROIDRUN_INDEX", "======= ELEMENT INDEX MAPPING END =======")
             
             val jsonData = elementsArray.toString()
             
@@ -712,7 +717,7 @@ class DroidrunPortalService : AccessibilityService() {
             }
             
             Log.e("DROIDRUN_ADB_RESPONSE", "======= ELEMENTS DATA RESPONSE START =======")
-            Log.e("DROIDRUN_ADB_RESPONSE", "Broadcasting data for ${significantElements.size} elements (${if (onlyInteractive) "interactive only" else "all elements"})")
+            Log.e("DROIDRUN_ADB_RESPONSE", "Broadcasting data for ${significantElements.size} elements")
             Log.e("DROIDRUN_ADB_RESPONSE", "Original size: ${jsonData.length} bytes, Compact: ${compactJsonData.length} bytes (${
                 String.format("%.1f%%", 100 * (1 - compactJsonData.length.toFloat() / jsonData.length.toFloat()))
             } reduction)")
@@ -753,7 +758,8 @@ class DroidrunPortalService : AccessibilityService() {
                     "isClickable" to "ic",
                     "isCheckable" to "ik",
                     "isEditable" to "ie",
-                    "additionalContext" to "ac"
+                    "additionalContext" to "ac",
+                    "index" to "i" // Add mapping for index property
                 )
                 
                 // Transfer properties with shorter names
@@ -774,43 +780,6 @@ class DroidrunPortalService : AccessibilityService() {
         }
     }
     
-    /**
-     * Filters the elements to only include those that provide meaningful context for an LLM,
-     * reducing token count while preserving important information.
-     */
-    private fun getSignificantElements(elements: List<Pair<ElementNode, Float>>): List<Pair<ElementNode, Float>> {
-        // These class names typically don't add contextual value and can be filtered out
-        val lowValueClassNames = setOf(
-            "FrameLayout", "LinearLayout", "ViewGroup", "View", "GridView", 
-            "HorizontalScrollView", "ConstraintLayout"
-        )
-        
-        // Filter out container views without meaningful text
-        val filteredElements = elements.filter { (element, _) ->
-            // Keep elements with meaningful text
-            if (element.text.isNotEmpty() && 
-                !element.text.startsWith("ub__") && 
-                element.text != element.className) {
-                return@filter true
-            }
-            
-            // Keep clickable elements regardless of text
-            if (element.nodeInfo.isClickable || element.nodeInfo.isCheckable || element.nodeInfo.isEditable) {
-                return@filter true
-            }
-            
-            // Filter out generic container classes without meaningful text
-            if (lowValueClassNames.contains(element.className)) {
-                return@filter false
-            }
-            
-            // Default to keeping elements we're unsure about
-            return@filter true
-        }
-        
-        return filteredElements
-    }
-
     private fun retriggerElements() {
         if (!isInitialized || visibleElements.isEmpty()) {
             Log.e("DROIDRUN_RECEIVER", "Cannot retrigger - service not initialized or no elements")
@@ -846,37 +815,5 @@ class DroidrunPortalService : AccessibilityService() {
             Log.e(TAG, "Error retriggering elements: ${e.message}", e)
             Log.e("DROIDRUN_RETRIGGER", "ERROR: ${e.message}")
         }
-    }
-
-    /**
-     * Returns a list of only clickable and input elements with their calculated weights.
-     * This includes buttons, text inputs, checkboxes, and other interactive elements.
-     */
-    private fun getInteractiveElements(): List<Pair<ElementNode, Float>> {
-        val interactiveElements = visibleElements.filter { element ->
-            // Check if the element is interactive through properties
-            element.nodeInfo.isClickable || 
-            element.nodeInfo.isCheckable || 
-            element.nodeInfo.isEditable ||
-            // Check if it's focusable (often true for input fields)
-            element.nodeInfo.isFocusable ||
-            // Check if it accepts text input
-            element.nodeInfo.isTextEntryKey ||
-            // Also include elements that are likely interactive based on their class name
-            element.className.matches(Regex(".*(Button|EditText|TextView|CheckBox|Switch|RadioButton|Spinner|SearchView|AutoCompleteTextView)$")) ||
-            // Check if it's an input field by class name pattern
-            element.className.contains("Input") ||
-            element.className.contains("Edit") ||
-            // Check if it's a text field
-            element.className.contains("Text") && element.nodeInfo.isFocusable
-        }
-        
-        // Calculate weights for the filtered elements
-        val elementsWithWeights = interactiveElements.map { element ->
-            Pair(element, element.calculateWeight())
-        }
-        
-        // Sort by weight descending to prioritize more recently visible elements
-        return elementsWithWeights.sortedByDescending { it.second }
     }
 } 

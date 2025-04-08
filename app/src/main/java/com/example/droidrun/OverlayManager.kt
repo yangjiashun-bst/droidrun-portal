@@ -21,8 +21,8 @@ class OverlayManager(private val context: Context) {
     private val handler = Handler(Looper.getMainLooper())
     private val elementRects = mutableListOf<ElementInfo>()
     private var isOverlayVisible = false
-    private var isInteractiveOnly = false
     private var positionCorrectionOffset = 0 // Default correction offset
+    private var elementIndexCounter = 0 // Counter to assign indexes to elements
 
     companion object {
         private const val TAG = "TOPVIEW_OVERLAY"
@@ -34,7 +34,8 @@ class OverlayManager(private val context: Context) {
         val type: String, 
         val text: String,
         val depth: Int = 0, // Added depth field to track hierarchy level
-        val color: Int = Color.GREEN // Add color field with default value
+        val color: Int = Color.GREEN, // Add color field with default value
+        val index: Int = 0 // Index number for identifying the element
     )
 
     fun showOverlay() {
@@ -86,14 +87,9 @@ class OverlayManager(private val context: Context) {
         }
     }
 
-    // Update this method to handle the interactive only setting
-    fun setInteractiveOnly(interactiveOnly: Boolean) {
-        isInteractiveOnly = interactiveOnly
-        Log.d(TAG, "Interactive only mode set to: $interactiveOnly")
-    }
-
     fun clearElements() {
         elementRects.clear()
+        elementIndexCounter = 0 // Reset the index counter when clearing elements
         Log.d(TAG, "Elements cleared")
         refreshOverlay()
     }
@@ -101,8 +97,9 @@ class OverlayManager(private val context: Context) {
     fun addElement(rect: Rect, type: String, text: String, depth: Int = 0, color: Int = Color.GREEN) {
         // Apply position correction to the rectangle
         val correctedRect = correctRectPosition(rect)
-        elementRects.add(ElementInfo(correctedRect, type, text, depth, color))
-        Log.d(TAG, "Element added: $text at $correctedRect (color: ${Integer.toHexString(color)})")
+        val index = elementIndexCounter++
+        elementRects.add(ElementInfo(correctedRect, type, text, depth, color, index))
+        Log.d(TAG, "Element added: $text (index $index) at $correctedRect (color: ${Integer.toHexString(color)})")
         // Don't refresh on each add to avoid excessive redraws with many elements
     }
     
@@ -125,6 +122,106 @@ class OverlayManager(private val context: Context) {
             overlayView?.invalidate()
             Log.d(TAG, "Overlay refresh requested, element count: ${elementRects.size}")
         }
+    }
+
+    // Update an existing element without changing its index
+    fun updateElement(rect: Rect, text: String, color: Int = Color.GREEN) {
+        val correctedRect = correctRectPosition(rect)
+        
+        // Try to find the existing element first
+        val existingElement = elementRects.find { element ->
+            // Check if this is the same element by matching text and checking for significant overlap
+            if (element.text == text) {
+                val overlapRect = Rect(element.rect)
+                if (overlapRect.intersect(correctedRect)) {
+                    val overlapArea = overlapRect.width() * overlapRect.height()
+                    val elementArea = element.rect.width() * element.rect.height()
+                    val inputArea = correctedRect.width() * correctedRect.height()
+                    val minArea = minOf(elementArea, inputArea)
+                    
+                    // If rectangles have significant overlap (>50%), it's likely the same element
+                    minArea > 0 && overlapArea.toFloat() / minArea > 0.5f
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        }
+        
+        if (existingElement != null) {
+            // Update the existing element's properties but keep its index
+            val index = existingElement.index
+            val elementIndex = elementRects.indexOf(existingElement)
+            if (elementIndex >= 0) {
+                elementRects[elementIndex] = ElementInfo(
+                    rect = correctedRect,
+                    type = existingElement.type,
+                    text = text,
+                    depth = existingElement.depth,
+                    color = color,
+                    index = index
+                )
+                Log.d(TAG, "Updated element: $text (index $index) with new color: ${Integer.toHexString(color)}")
+            }
+        } else {
+            // If element doesn't exist, add it as a new element
+            val index = elementIndexCounter++
+            elementRects.add(ElementInfo(
+                rect = correctedRect,
+                type = "UpdatedElement",
+                text = text,
+                depth = 0,
+                color = color,
+                index = index
+            ))
+            Log.d(TAG, "Added new element during update: $text (index $index)")
+        }
+    }
+    
+    // Get the count of elements in the overlay
+    fun getElementCount(): Int {
+        return elementRects.size
+    }
+
+    // Get the index of an element
+    fun getElementIndex(rect: Rect, text: String): Int {
+        // Apply the same position correction that was applied when adding the element
+        val correctedRect = correctRectPosition(rect)
+        
+        // First try to find an exact match with the corrected rectangle
+        val exactMatch = elementRects.find { 
+            it.rect == correctedRect && it.text == text 
+        }
+        
+        if (exactMatch != null) {
+            return exactMatch.index
+        }
+        
+        // If no exact match, try to find the most similar rectangle by checking for intersection
+        // and text match, which is more reliable in case of minor position differences
+        val similarElement = elementRects.find { element ->
+            val rectOverlaps = Rect.intersects(element.rect, correctedRect) 
+            val textMatches = element.text == text
+            
+            // Calculate how much the rectangles overlap as a percentage of the smaller rectangle's area
+            val overlapRect = Rect(element.rect)
+            if (overlapRect.intersect(correctedRect)) {
+                val overlapArea = overlapRect.width() * overlapRect.height()
+                val elementArea = element.rect.width() * element.rect.height()
+                val inputArea = correctedRect.width() * correctedRect.height()
+                val minArea = minOf(elementArea, inputArea)
+                
+                // If rectangles have significant overlap (>70%) and the text matches, it's likely the same element
+                val hasSignificantOverlap = minArea > 0 && overlapArea.toFloat() / minArea > 0.7f
+                
+                hasSignificantOverlap && textMatches
+            } else {
+                false
+            }
+        }
+        
+        return similarElement?.index ?: -1
     }
 
     inner class OverlayView(context: Context) : FrameLayout(context) {
@@ -197,50 +294,34 @@ class OverlayManager(private val context: Context) {
                     // Draw the rectangle with the specified color
                     canvas.drawRect(elementInfo.rect, boxPaint)
                     
-                    // Position the text label above the element
-                    val colorHex = String.format("%06X", 0xFFFFFF and elementColor)
-                    val displayText = "${elementInfo.text.take(12)} (#$colorHex)"
+                    // Just display the element index
+                    val displayText = "${elementInfo.index}"
                     val textWidth = textPaint.measureText(displayText)
-                    val textHeight = 36f
+                    val textHeight = 40f
                     
-                    // Draw text background
-                    val textY = maxOf(textHeight + 5, elementInfo.rect.top.toFloat() - 5)
-                    val textRect = Rect(
-                        elementInfo.rect.left,
-                        (textY - textHeight).toInt(),
-                        (elementInfo.rect.left + textWidth + 10).toInt(),
-                        textY.toInt()
+                    // Position the index in the center of the element if possible
+                    val centerX = elementInfo.rect.centerX()
+                    val centerY = elementInfo.rect.centerY()
+                    
+                    // Calculate background rectangle
+                    val textBackgroundSize = textHeight * 1.2f
+                    val backgroundRect = Rect(
+                        (centerX - textBackgroundSize/2).toInt(),
+                        (centerY - textBackgroundSize/2).toInt(),
+                        (centerX + textBackgroundSize/2).toInt(),
+                        (centerY + textBackgroundSize/2).toInt()
                     )
                     
-                    // Make sure the text background is fully on screen
-                    if (textRect.top >= 0) {
-                        canvas.drawRect(textRect, textBackgroundPaint)
-                        
-                        // Draw the text
-                        canvas.drawText(
-                            displayText,
-                            elementInfo.rect.left + 5f,
-                            textY - 8f, // Position text inside background
-                            textPaint
-                        )
-                    } else {
-                        // If text would be off-screen, draw it below the element instead
-                        val belowTextRect = Rect(
-                            elementInfo.rect.left,
-                            elementInfo.rect.bottom,
-                            (elementInfo.rect.left + textWidth + 10).toInt(),
-                            elementInfo.rect.bottom + textHeight.toInt()
-                        )
-                        canvas.drawRect(belowTextRect, textBackgroundPaint)
-                        
-                        // Draw text below
-                        canvas.drawText(
-                            displayText,
-                            elementInfo.rect.left + 5f,
-                            elementInfo.rect.bottom + textHeight - 8f,
-                            textPaint
-                        )
-                    }
+                    // Draw background circle
+                    canvas.drawRect(backgroundRect, textBackgroundPaint)
+                    
+                    // Draw the index number centered
+                    canvas.drawText(
+                        displayText,
+                        centerX - textWidth/2,
+                        centerY + textHeight/3, // Adjusted to center the text vertically
+                        textPaint
+                    )
                 } catch (e: Exception) {
                     Log.e(TAG, "Error drawing element: ${e.message}", e)
                 }
