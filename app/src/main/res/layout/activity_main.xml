@@ -84,6 +84,22 @@
                     android:checked="true" />
             </LinearLayout>
             
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="16dp">
+
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/toggle_interactive_only"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Show Interactive Elements Only"
+                    android:textSize="14sp"
+                    android:checked="false" />
+            </LinearLayout>
+            
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/retrigger_button"
                 android:layout_width="match_parent"

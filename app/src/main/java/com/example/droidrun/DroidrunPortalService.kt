@@ -87,6 +87,17 @@ class DroidrunPortalService : AccessibilityService() {
                     if (overlayVisible) {
                         updateVisualization()
                     }
+                    
+                    // Update OverlayManager's interactive only setting
+                    if (isInitialized) {
+                        overlayManager.setInteractiveOnly(showInteractiveOnly)
+                    }
+                    
+                    // Send response broadcast to update app UI
+                    val responseIntent = Intent(ACTION_ELEMENTS_RESPONSE).apply {
+                        putExtra(EXTRA_INTERACTIVE_ONLY, showInteractiveOnly)
+                    }
+                    sendBroadcast(responseIntent)
                 }
                 ACTION_RETRIGGER_ELEMENTS -> {
                     retriggerElements()
@@ -613,6 +624,13 @@ class DroidrunPortalService : AccessibilityService() {
                     overlayManager.showOverlay()
                     startPeriodicUpdates()
                     startVisualizationUpdates()
+                    
+                    // Send initial state to the MainActivity
+                    val responseIntent = Intent(ACTION_ELEMENTS_RESPONSE).apply {
+                        putExtra(EXTRA_OVERLAY_VISIBLE, overlayVisible)
+                        putExtra(EXTRA_INTERACTIVE_ONLY, showInteractiveOnly)
+                    }
+                    sendBroadcast(responseIntent)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error showing overlay: ${e.message}", e)

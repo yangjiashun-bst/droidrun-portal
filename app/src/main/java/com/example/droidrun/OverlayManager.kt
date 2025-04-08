@@ -12,14 +12,12 @@ import android.util.Log
 import android.view.Gravity
 import android.view.WindowManager
 import android.widget.FrameLayout
-import android.widget.ImageButton
 import android.content.Intent
 import android.view.View
 
 class OverlayManager(private val context: Context) {
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private var overlayView: OverlayView? = null
-    private var toggleButton: ImageButton? = null
     private val handler = Handler(Looper.getMainLooper())
     private val elementRects = mutableListOf<ElementInfo>()
     private var isOverlayVisible = false
@@ -59,52 +57,11 @@ class OverlayManager(private val context: Context) {
             )
             params.gravity = Gravity.TOP or Gravity.START
             
-            // Create toggle button
-            toggleButton = ImageButton(context).apply {
-                setBackgroundColor(Color.parseColor("#CC000000")) // More opaque black background
-                setImageResource(android.R.drawable.ic_menu_manage)
-                alpha = 0.8f
-                // Set explicit size
-                minimumWidth = 150
-                minimumHeight = 150
-                setPadding(20, 20, 20, 20)
-            }
-            
-            val buttonParams = WindowManager.LayoutParams(
-                150, // Fixed width
-                150, // Fixed height
-                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-                PixelFormat.TRANSLUCENT
-            )
-            buttonParams.gravity = Gravity.TOP or Gravity.END
-            buttonParams.x = 50 // Distance from right edge
-            buttonParams.y = 200 // Distance from top
-            
-            toggleButton?.setOnClickListener {
-                isInteractiveOnly = !isInteractiveOnly
-                toggleButton?.apply {
-                    alpha = if (isInteractiveOnly) 1.0f else 0.8f
-                    setBackgroundColor(if (isInteractiveOnly) 
-                        Color.parseColor("#FF2196F3") // Material Blue when active
-                    else 
-                        Color.parseColor("#CC000000") // Semi-transparent black when inactive
-                    )
-                }
-                
-                // Broadcast the change
-                val intent = Intent(DroidrunPortalService.ACTION_TOGGLE_INTERACTIVE_ONLY).apply {
-                    putExtra(DroidrunPortalService.EXTRA_INTERACTIVE_ONLY, isInteractiveOnly)
-                }
-                context.sendBroadcast(intent)
-            }
-            
             handler.post {
                 try {
                     windowManager.addView(overlayView, params)
-                    windowManager.addView(toggleButton, buttonParams)
                     isOverlayVisible = true
-                    Log.d(TAG, "Overlay and toggle button added successfully")
+                    Log.d(TAG, "Overlay added successfully")
                 } catch (e: Exception) {
                     Log.e(TAG, "Error adding overlay: ${e.message}", e)
                 }
@@ -121,16 +78,18 @@ class OverlayManager(private val context: Context) {
                     windowManager.removeView(it)
                     overlayView = null
                 }
-                toggleButton?.let {
-                    windowManager.removeView(it)
-                    toggleButton = null
-                }
                 isOverlayVisible = false
-                Log.d(TAG, "Overlay and toggle button removed")
+                Log.d(TAG, "Overlay removed")
             } catch (e: Exception) {
                 Log.e(TAG, "Error removing overlay: ${e.message}", e)
             }
         }
+    }
+
+    // Update this method to handle the interactive only setting
+    fun setInteractiveOnly(interactiveOnly: Boolean) {
+        isInteractiveOnly = interactiveOnly
+        Log.d(TAG, "Interactive only mode set to: $interactiveOnly")
     }
 
     fun clearElements() {

@@ -17,6 +17,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusText: TextView
     private lateinit var responseText: TextView
     private lateinit var toggleOverlay: SwitchMaterial
+    private lateinit var toggleInteractiveOnly: SwitchMaterial
     private lateinit var fetchButton: MaterialButton
     private lateinit var retriggerButton: MaterialButton
     
@@ -49,6 +50,12 @@ class MainActivity : AppCompatActivity() {
                     val overlayVisible = intent.getBooleanExtra("overlay_status", true)
                     toggleOverlay.isChecked = overlayVisible
                 }
+                
+                // Handle interactive only toggle status
+                if (intent.hasExtra(DroidrunPortalService.EXTRA_INTERACTIVE_ONLY)) {
+                    val interactiveOnly = intent.getBooleanExtra(DroidrunPortalService.EXTRA_INTERACTIVE_ONLY, false)
+                    toggleInteractiveOnly.isChecked = interactiveOnly
+                }
             }
         }
     }
@@ -63,6 +70,7 @@ class MainActivity : AppCompatActivity() {
         fetchButton = findViewById(R.id.fetch_button)
         retriggerButton = findViewById(R.id.retrigger_button)
         toggleOverlay = findViewById(R.id.toggle_overlay)
+        toggleInteractiveOnly = findViewById(R.id.toggle_interactive_only)
         
         // Register for responses
         val filter = IntentFilter(DroidrunPortalService.ACTION_ELEMENTS_RESPONSE)
@@ -78,6 +86,10 @@ class MainActivity : AppCompatActivity() {
         
         toggleOverlay.setOnCheckedChangeListener { _, isChecked ->
             toggleOverlayVisibility(isChecked)
+        }
+        
+        toggleInteractiveOnly.setOnCheckedChangeListener { _, isChecked ->
+            toggleInteractiveOnly(isChecked)
         }
     }
     
@@ -116,6 +128,21 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) {
             statusText.text = "Error changing visibility: ${e.message}"
             Log.e("DROIDRUN_MAIN", "Error toggling overlay: ${e.message}")
+        }
+    }
+    
+    private fun toggleInteractiveOnly(interactiveOnly: Boolean) {
+        try {
+            val intent = Intent(DroidrunPortalService.ACTION_TOGGLE_INTERACTIVE_ONLY).apply {
+                putExtra(DroidrunPortalService.EXTRA_INTERACTIVE_ONLY, interactiveOnly)
+            }
+            sendBroadcast(intent)
+            
+            statusText.text = "Showing ${if (interactiveOnly) "interactive elements only" else "all elements"}"
+            Log.e("DROIDRUN_MAIN", "Toggled interactive only to: $interactiveOnly")
+        } catch (e: Exception) {
+            statusText.text = "Error changing interactive only: ${e.message}"
+            Log.e("DROIDRUN_MAIN", "Error toggling interactive only: ${e.message}")
         }
     }
     
