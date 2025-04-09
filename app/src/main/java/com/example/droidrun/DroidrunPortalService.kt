@@ -725,7 +725,8 @@ class DroidrunPortalService : AccessibilityService() {
                         element.nodeInfo.isClickable || 
                         element.nodeInfo.isCheckable ||
                         element.nodeInfo.isEditable ||
-                        element.nodeInfo.isScrollable
+                        element.nodeInfo.isScrollable ||
+                        element.nodeInfo.isFocusable
                     }.sortedBy { it.clickableIndex }
                     
                     // Log clickable elements for debugging
@@ -736,6 +737,7 @@ class DroidrunPortalService : AccessibilityService() {
                             element.nodeInfo.isCheckable -> "CHECK"
                             element.nodeInfo.isEditable -> "INPUT"
                             element.nodeInfo.isScrollable -> "SCROLL"
+                            element.nodeInfo.isFocusable -> "FOCUS"
                             else -> "OTHER"
                         }
                         Log.e("DROIDRUN_TEXT", "${element.clickableIndex}: $type - ${element.text}")
@@ -755,6 +757,7 @@ class DroidrunPortalService : AccessibilityService() {
                                 element.nodeInfo.isCheckable -> "checkable"
                                 element.nodeInfo.isEditable -> "input"
                                 element.nodeInfo.isScrollable -> "scrollable"
+                                element.nodeInfo.isFocusable -> "focusable"
                                 else -> "other"
                             })
                         }
