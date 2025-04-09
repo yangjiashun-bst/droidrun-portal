@@ -23,13 +23,14 @@ class DroidrunPortalService : AccessibilityService() {
     
     companion object {
         private const val TAG = "DROIDRUN_PORTAL"
-        private const val REFRESH_INTERVAL_MS = 500L // Refresh every 0.5 seconds
+        private const val REFRESH_INTERVAL_MS = 250L // Single refresh interval for all updates
         private const val MIN_ELEMENT_SIZE = 5 // Minimum size for an element to be considered
+        private const val MIN_FRAME_TIME_MS = 16L // Minimum time between frames (roughly 60 FPS)
         
         // Time-based fade settings
         private const val FADE_DURATION_MS = 60000L // Time to fade from weight 1.0 to 0.0 (60 seconds)
         private const val VISUALIZATION_REFRESH_MS = 250L // How often to refresh visualization (250ms = 4 times per second)
-        private const val MIN_DISPLAY_WEIGHT = 0.2f // Minimum weight to display elements
+        private const val MIN_DISPLAY_WEIGHT = 0.05f // Minimum weight to display elements
         private const val SAME_TIME_THRESHOLD_MS = 500L // Elements appearing within this time window are considered "same time"
         
         // Color for heatmap (we'll use a gradient from RED to BLUE based on weight)
@@ -57,6 +58,9 @@ class DroidrunPortalService : AccessibilityService() {
     
     // Track currently displayed elements (after filtering)
     private val displayedElements = mutableListOf<Pair<ElementNode, Float>>()
+    
+    private var lastDrawTime = 0L
+    private var pendingVisualizationUpdate = false
     
     // Broadcast receiver for ADB commands
     private val broadcastReceiver = object : BroadcastReceiver() {
@@ -124,7 +128,7 @@ class DroidrunPortalService : AccessibilityService() {
             }
             
             stopPeriodicUpdates()
-            stopVisualizationUpdates()
+            mainHandler.removeCallbacks(visualizationRunnable)
             resetOverlayState()
             
             if (isInitialized) {
@@ -138,7 +142,20 @@ class DroidrunPortalService : AccessibilityService() {
 
     private val updateRunnable = object : Runnable {
         override fun run() {
-            processActiveWindow()
+            if (isInitialized) {
+                val currentTime = System.currentTimeMillis()
+                val timeSinceLastDraw = currentTime - lastDrawTime
+                
+                if (timeSinceLastDraw >= MIN_FRAME_TIME_MS) {
+                    processActiveWindow()
+                    updateVisualizationIfNeeded()
+                    lastDrawTime = currentTime
+                } else if (pendingVisualizationUpdate) {
+                    // Schedule next update to maintain frame rate
+                    mainHandler.postDelayed(this, MIN_FRAME_TIME_MS - timeSinceLastDraw)
+                    return
+                }
+            }
             mainHandler.postDelayed(this, REFRESH_INTERVAL_MS)
         }
     }
@@ -146,14 +163,15 @@ class DroidrunPortalService : AccessibilityService() {
     private val visualizationRunnable = object : Runnable {
         override fun run() {
             if (isInitialized) {
-                updateVisualization()
+                updateVisualizationIfNeeded()
             }
-            mainHandler.postDelayed(this, VISUALIZATION_REFRESH_MS)
+            mainHandler.postDelayed(this, REFRESH_INTERVAL_MS)
         }
     }
 
     private fun startPeriodicUpdates() {
         Log.d(TAG, "Starting periodic updates")
+        lastDrawTime = System.currentTimeMillis()
         mainHandler.postDelayed(updateRunnable, REFRESH_INTERVAL_MS)
     }
     
@@ -172,8 +190,11 @@ class DroidrunPortalService : AccessibilityService() {
         mainHandler.removeCallbacks(visualizationRunnable)
     }
     
-    private fun updateVisualization() {
-        if (!isInitialized || visibleElements.isEmpty()) return
+    private fun updateVisualizationIfNeeded() {
+        if (!isInitialized || visibleElements.isEmpty()) {
+            pendingVisualizationUpdate = false
+            return
+        }
         
         try {
             // Process all visible elements
@@ -185,6 +206,28 @@ class DroidrunPortalService : AccessibilityService() {
             val weightSortedElements = elementsToProcess
                 .filter { (_, weight) -> weight > MIN_DISPLAY_WEIGHT }
                 .sortedByDescending { (_, weight) -> weight }
+            
+            if (!overlayVisible) {
+                pendingVisualizationUpdate = false
+                return
+            }
+            
+            // Check if we actually need to update
+            val needsUpdate = synchronized(displayedElements) {
+                if (displayedElements.size != weightSortedElements.size) {
+                    true
+                } else {
+                    // Check if weights have changed significantly
+                    displayedElements.zip(weightSortedElements).any { (current, new) ->
+                        Math.abs(current.second - new.second) > 0.05f
+                    }
+                }
+            }
+            
+            if (!needsUpdate) {
+                pendingVisualizationUpdate = false
+                return
+            }
             
             // Process overlapping elements
             val elementsToDisplay = mutableListOf<Pair<ElementNode, Float>>()
@@ -212,8 +255,8 @@ class DroidrunPortalService : AccessibilityService() {
             
             // Sort by layer and weight
             val sortedElements = elementsToDisplay.sortedWith(
-                compareBy<Pair<ElementNode, Float>> { it.first.windowLayer }
-                    .thenByDescending { it.second }
+                compareBy<Pair<ElementNode, Float>> { (element, _) -> element.windowLayer }
+                    .thenByDescending { (_, weight) -> weight }
             )
             
             // Update UI if visible
@@ -241,9 +284,11 @@ class DroidrunPortalService : AccessibilityService() {
                 displayedElements.addAll(sortedElements)
             }
             
+            pendingVisualizationUpdate = false
             Log.d(TAG, "Updated visualization with ${sortedElements.size} elements")
         } catch (e: Exception) {
             Log.e(TAG, "Error updating visualization: ${e.message}", e)
+            pendingVisualizationUpdate = true  // Try again next frame
         }
     }
 
@@ -263,7 +308,7 @@ class DroidrunPortalService : AccessibilityService() {
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
             AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,
             AccessibilityEvent.TYPE_VIEW_SCROLLED -> {
-                processActiveWindow()
+                pendingVisualizationUpdate = true  // Mark for update on next frame
             }
         }
     }
@@ -394,65 +439,69 @@ class DroidrunPortalService : AccessibilityService() {
     }
     
     private fun findAllVisibleElements(node: AccessibilityNodeInfo, windowLayer: Int) {
-        if (!node.isVisibleToUser) {
-            return
-        }
-        
-        val rect = Rect()
-        node.getBoundsInScreen(rect)
-        
-        val isInScreen = Rect.intersects(rect, screenBounds)
-        val hasSize = rect.width() > MIN_ELEMENT_SIZE && rect.height() > MIN_ELEMENT_SIZE
-        
-        if (isInScreen && hasSize) {
-            val text = node.text?.toString() ?: ""
-            val contentDesc = node.contentDescription?.toString() ?: ""
-            val className = node.className?.toString() ?: ""
-            val viewId = node.viewIdResourceName ?: ""
-            
-            val displayText = when {
-                text.isNotEmpty() -> text
-                contentDesc.isNotEmpty() -> contentDesc
-                viewId.isNotEmpty() -> viewId.substringAfterLast('/')
-                else -> className.substringAfterLast('.')
+        try {
+            if (!node.isVisibleToUser) {
+                return
             }
             
-            val elementType = if (node.isClickable) {
-                "Clickable"
-            } else if (node.isCheckable) {
-                "Checkable"
-            } else if (node.isEditable) {
-                "Input"
-            } else if (text.isNotEmpty()) {
-                "Text"
-            } else if (node.isScrollable) {
-                "Container"
-            } else {
-                "View"
+            val rect = Rect()
+            node.getBoundsInScreen(rect)
+            
+            val isInScreen = Rect.intersects(rect, screenBounds)
+            val hasSize = rect.width() > MIN_ELEMENT_SIZE && rect.height() > MIN_ELEMENT_SIZE
+            
+            if (isInScreen && hasSize) {
+                val text = node.text?.toString() ?: ""
+                val contentDesc = node.contentDescription?.toString() ?: ""
+                val className = node.className?.toString() ?: ""
+                val viewId = node.viewIdResourceName ?: ""
+                
+                val displayText = when {
+                    text.isNotEmpty() -> text
+                    contentDesc.isNotEmpty() -> contentDesc
+                    viewId.isNotEmpty() -> viewId.substringAfterLast('/')
+                    else -> className.substringAfterLast('.')
+                }
+                
+                val elementType = if (node.isClickable) {
+                    "Clickable"
+                } else if (node.isCheckable) {
+                    "Checkable"
+                } else if (node.isEditable) {
+                    "Input"
+                } else if (text.isNotEmpty()) {
+                    "Text"
+                } else if (node.isScrollable) {
+                    "Container"
+                } else {
+                    "View"
+                }
+                
+                val id = ElementNode.createId(rect, className.substringAfterLast('.'), displayText)
+                
+                val elementNode = ElementNode(
+                    AccessibilityNodeInfo.obtain(node),
+                    Rect(rect),
+                    displayText.take(30),
+                    className.substringAfterLast('.'),
+                    windowLayer,
+                    System.currentTimeMillis(),
+                    id
+                )
+                visibleElements.add(elementNode)
+                Log.d(TAG, "Found $elementType: ${displayText} [${className.substringAfterLast('.')}] at $rect")
             }
             
-            val id = ElementNode.createId(rect, className.substringAfterLast('.'), displayText)
-            
-            val elementNode = ElementNode(
-                AccessibilityNodeInfo.obtain(node),
-                Rect(rect),
-                displayText.take(30),
-                className.substringAfterLast('.'),
-                windowLayer,
-                System.currentTimeMillis(),
-                id
-            )
-            visibleElements.add(elementNode)
-            Log.d(TAG, "Added $elementType: ${displayText} [${className.substringAfterLast('.')}]")
-        }
-        
-        for (i in 0 until node.childCount) {
-            val childNode = node.getChild(i) ?: continue
-            try {
-                findAllVisibleElements(childNode, windowLayer)
-            } finally {
-                childNode.recycle()
+            for (i in 0 until node.childCount) {
+                val childNode = node.getChild(i) ?: continue
+                try {
+                    findAllVisibleElements(childNode, windowLayer)
+                } finally {
+                    childNode.recycle()
+                }
             }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in findAllVisibleElements: ${e.message}", e)
         }
     }
     
@@ -478,111 +527,133 @@ class DroidrunPortalService : AccessibilityService() {
     
     // This method processes elements for data collection without affecting the UI
     private fun updateElementsForDataCollection() {
-        val elementsWithWeights = visibleElements.map { element ->
-            val weight = element.calculateWeight()
-            Pair(element, weight)
-        }
-        
-        val visibleWeightElements = elementsWithWeights
-            .filter { (_, weight) -> weight > MIN_DISPLAY_WEIGHT }
+        try {
+            Log.d(TAG, "Starting element processing with ${visibleElements.size} elements")
             
-        // Constants for stability
-        val STABILITY_THRESHOLD_MS = 2000L // Time threshold before a new element replaces an old one (increased for stability)
-        val now = System.currentTimeMillis()
-        
-        // First, sort by creation time (newest first)
-        val elementsByRecency = visibleWeightElements.sortedByDescending { (element, _) -> element.creationTime }
-        
-        // We'll build a result set that only contains non-overlapping elements
-        val finalElements = mutableListOf<Pair<ElementNode, Float>>()
-        
-        // For each element (starting from newest)
-        for (currentElement in elementsByRecency) {
-            val (element, weight) = currentElement
+            // First, sort all elements by creation time (oldest first)
+            val sortedElements = visibleElements.sortedBy { it.creationTime }
+            Log.d(TAG, "Sorted elements by creation time")
             
-            // Check if this element overlaps with any elements already in our final list
-            val overlappingElements = finalElements.filter { (existingElement, _) ->
-                element.overlaps(existingElement)
+            // Clear existing relationships
+            for (element in visibleElements) {
+                element.parent = null
+                element.children.clear()
             }
+            Log.d(TAG, "Cleared existing relationships")
             
-            if (overlappingElements.isEmpty()) {
-                // No overlap with existing elements, add it
-                finalElements.add(currentElement)
-                continue
-            }
+            // Build the hierarchy - but limit nesting depth to avoid cycles
+            val processedElements = mutableSetOf<String>() // Track processed elements by ID
             
-            // If elements appeared at nearly the same time (within SAME_TIME_THRESHOLD_MS),
-            // display both even if they overlap
-            val allWithinThreshold = overlappingElements.all { (existingElement, _) ->
-                Math.abs(existingElement.creationTime - element.creationTime) <= SAME_TIME_THRESHOLD_MS
-            }
-            
-            if (allWithinThreshold) {
-                // If all overlapping elements appeared around the same time as this one,
-                // keep them all (they likely belong to the same UI component group)
-                finalElements.add(currentElement)
-                Log.d(TAG, "Keeping overlapping element '${element.text}' because it appeared at nearly the same time as others")
-                continue
-            }
-            
-            // Otherwise, follow the normal replacement logic
-            val oldestOverlappingTime = overlappingElements.minByOrNull { it.first.creationTime }?.first?.creationTime ?: Long.MAX_VALUE
-            
-            if ((element.creationTime - oldestOverlappingTime) > STABILITY_THRESHOLD_MS) {
-                // This element is significantly newer (by our threshold) than what it overlaps
-                // Remove all older elements it overlaps with
-                for (overlap in overlappingElements) {
-                    finalElements.remove(overlap)
-                    Log.d(TAG, "Replaced older element '${overlap.first.text}' with newer element '${element.text}'")
+            for (element in sortedElements) {
+                if (processedElements.contains(element.id)) {
+                    Log.w(TAG, "Element ${element.text} already processed, skipping")
+                    continue
                 }
-                // Add this element
-                finalElements.add(currentElement)
-            } else {
-                // Not significantly newer, skip it to maintain stability
-                Log.d(TAG, "Skipping element '${element.text}' to maintain stability (overlaps existing elements)")
+                
+                // Find potential containers (elements that fully contain this one)
+                val containers = sortedElements.filter { potential ->
+                    potential != element && 
+                    potential.contains(element) &&
+                    !processedElements.contains(potential.id)
+                }
+                
+                // Find the smallest container
+                val bestContainer = containers.minByOrNull { it.rect.width() * it.rect.height() }
+                
+                if (bestContainer != null) {
+                    bestContainer.addChild(element)
+                    Log.d(TAG, "Added ${element.text} as child of ${bestContainer.text}")
+                } else {
+                    element.parent = null
+                    Log.d(TAG, "Kept ${element.text} as root element")
+                }
+                
+                processedElements.add(element.id)
             }
+            
+            // Now assign indices to clickable elements in order of their creation time
+            var clickableIndex = 0
+            
+            // First reset all indices
+            for (element in visibleElements) {
+                element.clickableIndex = -1
+            }
+            
+            // Then assign new indices to qualifying elements
+            val clickableElements = sortedElements.filter { it.isClickable() || it.isText() }
+            Log.d(TAG, "Found ${clickableElements.size} clickable/text elements")
+            
+            for (element in clickableElements) {
+                element.clickableIndex = clickableIndex++
+                Log.d(TAG, "Assigned index ${element.clickableIndex} to ${element.text}")
+            }
+            
+            // Update the displayed elements list with the hierarchy information
+            synchronized(displayedElements) {
+                displayedElements.clear()
+                
+                // Add all elements with their weights, but only if they're visible
+                val visibleWeightElements = sortedElements.mapNotNull { element ->
+                    val weight = element.calculateWeight()
+                    if (weight > MIN_DISPLAY_WEIGHT) {
+                        Pair(element, weight)
+                    } else null
+                }
+                
+                displayedElements.addAll(visibleWeightElements)
+                Log.d(TAG, "Updated displayed elements, now showing ${displayedElements.size} elements")
+            }
+            
+            Log.d(TAG, "Completed hierarchy build with ${sortedElements.size} elements, ${clickableIndex} clickable/text elements")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in updateElementsForDataCollection: ${e.message}", e)
         }
-        
-        val sortedElements = finalElements.sortedWith(
-            compareBy<Pair<ElementNode, Float>> { it.first.windowLayer }
-                .thenByDescending { it.second }
-        )
-        
-        synchronized(displayedElements) {
-            displayedElements.clear()
-            displayedElements.addAll(sortedElements)
-        }
-        
-        Log.d(TAG, "Collected ${sortedElements.size} elements out of ${visibleWeightElements.size} visible elements")
     }
     
     private fun updateOverlayWithTimeBasedWeights() {
         try {
-            if (!overlayVisible) return
+            if (!overlayVisible) {
+                Log.d(TAG, "Overlay not visible, skipping update")
+                return
+            }
+            
+            Log.d(TAG, "Starting overlay update with ${displayedElements.size} elements")
             
             overlayManager.clearElements()
             
-            Log.d(TAG, "Updating overlay UI with ${displayedElements.size} elements")
+            // Process elements in order of nesting (parents before children)
+            val elementsByNesting = displayedElements.sortedBy { (element, _) -> 
+                element.getNestingLevel() 
+            }
             
-            for ((element, weight) in displayedElements) {
+            var addedCount = 0
+            for ((element, weight) in elementsByNesting) {
                 try {
                     val heatmapColor = calculateHeatmapColor(weight)
                     
-                    val weightStr = String.format("%.2f", weight)
-                    val ageSeconds = ((System.currentTimeMillis() - element.creationTime) / 1000)
+                    // Create label based on element type and index
+                    val label = when {
+                        element.isClickable() -> "C${element.clickableIndex}"
+                        element.isText() -> "T${element.clickableIndex}"
+                        else -> ""
+                    }
                     
                     overlayManager.addElement(
                         rect = element.rect,
-                        type = "${element.className}", 
-                        text = "${element.text} (w:${weightStr}, age:${ageSeconds}s)",
-                        depth = element.windowLayer,
+                        type = "${element.className}",
+                        text = label,
+                        depth = element.getNestingLevel(),
                         color = heatmapColor
                     )
+                    addedCount++
+                    
+                    Log.d(TAG, "Added element to overlay: ${element.text} with label $label")
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error adding element: ${e.message}", e)
+                    Log.e(TAG, "Error adding element ${element.text}: ${e.message}", e)
                 }
             }
             
+            Log.d(TAG, "Added $addedCount elements to overlay, refreshing display")
             overlayManager.refreshOverlay()
             
         } catch (e: Exception) {
@@ -619,7 +690,7 @@ class DroidrunPortalService : AccessibilityService() {
                 if (isInitialized) {
                     overlayManager.showOverlay()
                     startPeriodicUpdates()
-                    startVisualizationUpdates()
+                    mainHandler.post(visualizationRunnable)
                     
                     // Send initial state to the MainActivity
                     val responseIntent = Intent(ACTION_ELEMENTS_RESPONSE).apply {
@@ -635,99 +706,85 @@ class DroidrunPortalService : AccessibilityService() {
 
     private fun broadcastElementData() {
         try {
-            // Check if we need to ensure elements have indexes
-            if (isInitialized) {
-                // Log current state of the elements in the overlay manager
-                val currentElementCount = overlayManager.getElementCount()
-                Log.e("DROIDRUN_DEBUG", "Current elements in overlay manager: $currentElementCount")
-            }
-            
-            val elementsToProcess = visibleElements.map { element -> 
-                Pair(element, element.calculateWeight())
+            // Check if overlay is ready
+            if (!isInitialized) {
+                Log.e("DROIDRUN_DEBUG", "Service not initialized yet")
+                return
             }
 
-            val significantElements = elementsToProcess.filter { (_, weight) -> 
-                weight > MIN_DISPLAY_WEIGHT 
-            }
-
-            val elementsArray = JSONArray()
+            // First ensure the overlay is updated with current elements
+            updateVisualizationIfNeeded()
             
-            // First, print just the text content of each element for easy reading
-            Log.e("DROIDRUN_TEXT", "======= ELEMENT TEXT LIST START =======")
-            significantElements.forEachIndexed { index, (element, _) ->
-                Log.e("DROIDRUN_TEXT", "${index}: ${element.text}")
-            }
-            Log.e("DROIDRUN_TEXT", "======= ELEMENT TEXT LIST END =======")
-            
-            Log.e("DROIDRUN_INDEX", "======= ELEMENT INDEX MAPPING START =======")
-            for ((element, weight) in significantElements) {
-                // Get the element's index from the overlay manager
-                val index = overlayManager.getElementIndex(element.rect, element.text)
-                Log.e("DROIDRUN_INDEX", "Element: '${element.text}', Bounds: ${element.rect}, Index: $index")
-                
-                val elementJson = JSONObject().apply {
-                    // Always include essential text property
-                    put("text", element.text)
-                    put("className", element.className)
-                    put("bounds", "${element.rect.left},${element.rect.top},${element.rect.right},${element.rect.bottom}")
-                    put("weight", weight)
-                    put("index", index) // Add the index number
+            // Small delay to ensure overlay is updated
+            mainHandler.postDelayed({
+                try {
+                    val elementsArray = JSONArray()
                     
-                    // Interactive properties are always important
-                    if (element.nodeInfo.isClickable) {
-                        put("isClickable", true)
+                    // Get all elements and filter for only clickable ones
+                    val clickableElements = visibleElements.filter { element ->
+                        element.nodeInfo.isClickable || 
+                        element.nodeInfo.isCheckable ||
+                        element.nodeInfo.isEditable ||
+                        element.nodeInfo.isScrollable
+                    }.sortedBy { it.clickableIndex }
+                    
+                    // Log clickable elements for debugging
+                    Log.e("DROIDRUN_TEXT", "======= CLICKABLE ELEMENTS START =======")
+                    clickableElements.forEach { element ->
+                        val type = when {
+                            element.nodeInfo.isClickable -> "CLICK"
+                            element.nodeInfo.isCheckable -> "CHECK"
+                            element.nodeInfo.isEditable -> "INPUT"
+                            element.nodeInfo.isScrollable -> "SCROLL"
+                            else -> "OTHER"
+                        }
+                        Log.e("DROIDRUN_TEXT", "${element.clickableIndex}: $type - ${element.text}")
                     }
-                    if (element.nodeInfo.isCheckable) {
-                        put("isCheckable", true)
-                    }
-                    if (element.nodeInfo.isEditable) {
-                        put("isEditable", true)
+                    Log.e("DROIDRUN_TEXT", "======= CLICKABLE ELEMENTS END =======")
+                    
+                    // Create JSON entries only for clickable elements
+                    for (element in clickableElements) {
+                        val elementJson = JSONObject().apply {
+                            put("text", element.text)
+                            put("className", element.className)
+                            put("index", element.clickableIndex)
+                            put("bounds", "${element.rect.left},${element.rect.top},${element.rect.right},${element.rect.bottom}")
+                            // Add type information
+                            put("type", when {
+                                element.nodeInfo.isClickable -> "clickable"
+                                element.nodeInfo.isCheckable -> "checkable"
+                                element.nodeInfo.isEditable -> "input"
+                                element.nodeInfo.isScrollable -> "scrollable"
+                                else -> "other"
+                            })
+                        }
+                        elementsArray.put(elementJson)
                     }
                     
-                    // Include window layer only if not zero
-                    if (element.windowLayer > 0) {
-                        put("windowLayer", element.windowLayer)
+                    val jsonData = elementsArray.toString()
+                    
+                    // Save to file
+                    try {
+                        val outputDir = getExternalFilesDir(null)
+                        val jsonFile = java.io.File(outputDir, "element_data.json")
+                        jsonFile.writeText(jsonData)
+                        Log.e("DROIDRUN_FILE", "JSON data written to: ${jsonFile.absolutePath}")
+                        Log.e("DROIDRUN_ADB_DATA", jsonData)
+                    } catch (e: Exception) {
+                        Log.e("DROIDRUN_FILE", "Error writing to file: ${e.message}")
                     }
+                    
+                    // Broadcast response
+                    val responseIntent = Intent(ACTION_ELEMENTS_RESPONSE).apply {
+                        putExtra(EXTRA_ELEMENTS_DATA, jsonData)
+                    }
+                    sendBroadcast(responseIntent)
+                    
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error processing elements: ${e.message}", e)
+                    Log.e("DROIDRUN_ADB_RESPONSE", "ERROR: ${e.message}")
                 }
-                elementsArray.put(elementJson)
-            }
-            Log.e("DROIDRUN_INDEX", "======= ELEMENT INDEX MAPPING END =======")
-            
-            val jsonData = elementsArray.toString()
-            
-            // Add option to get the compact or full version
-            val compactJsonData = compactifyJsonElements(jsonData)
-            
-            // Save both versions to files in external storage for ADB access
-            try {
-                val outputDir = getExternalFilesDir(null)
-                val fullJsonFile = java.io.File(outputDir, "element_data.json")
-                val compactJsonFile = java.io.File(outputDir, "element_data_compact.json")
-                
-                fullJsonFile.writeText(jsonData)
-                compactJsonFile.writeText(compactJsonData)
-                
-                Log.e("DROIDRUN_FILE", "JSON data written to: ${fullJsonFile.absolutePath}")
-                Log.e("DROIDRUN_FILE", "Compact JSON written to: ${compactJsonFile.absolutePath}")
-                
-                // Also dump the compact data to logcat for direct access
-                Log.e("DROIDRUN_ADB_DATA", compactJsonData)
-            } catch (e: Exception) {
-                Log.e("DROIDRUN_FILE", "Error writing to file: ${e.message}")
-            }
-            
-            Log.e("DROIDRUN_ADB_RESPONSE", "======= ELEMENTS DATA RESPONSE START =======")
-            Log.e("DROIDRUN_ADB_RESPONSE", "Broadcasting data for ${significantElements.size} elements")
-            Log.e("DROIDRUN_ADB_RESPONSE", "Original size: ${jsonData.length} bytes, Compact: ${compactJsonData.length} bytes (${
-                String.format("%.1f%%", 100 * (1 - compactJsonData.length.toFloat() / jsonData.length.toFloat()))
-            } reduction)")
-            Log.e("DROIDRUN_ADB_RESPONSE", "======= ELEMENTS DATA RESPONSE END =======")
-            
-            // Broadcast a response intent with the data
-            val responseIntent = Intent(ACTION_ELEMENTS_RESPONSE).apply {
-                putExtra(EXTRA_ELEMENTS_DATA, compactJsonData)
-            }
-            sendBroadcast(responseIntent)
+            }, 100)
             
         } catch (e: Exception) {
             Log.e(TAG, "Error broadcasting element data: ${e.message}", e)
@@ -736,48 +793,10 @@ class DroidrunPortalService : AccessibilityService() {
     }
     
     /**
-     * Further compactifies the JSON by using shorter property names and removing whitespace
+     * Simplified JSON output - no longer needed
      */
     private fun compactifyJsonElements(jsonData: String): String {
-        try {
-            val jsonArray = JSONArray(jsonData)
-            val compactArray = JSONArray()
-            
-            for (i in 0 until jsonArray.length()) {
-                val obj = jsonArray.getJSONObject(i)
-                val compactObj = JSONObject()
-                
-                // Map full property names to shorter ones
-                val propertyMap = mapOf(
-                    "text" to "t",
-                    "className" to "c",
-                    "bounds" to "b", 
-                    "weight" to "w",
-                    "age" to "a",
-                    "windowLayer" to "l",
-                    "isClickable" to "ic",
-                    "isCheckable" to "ik",
-                    "isEditable" to "ie",
-                    "additionalContext" to "ac",
-                    "index" to "i" // Add mapping for index property
-                )
-                
-                // Transfer properties with shorter names
-                val keys = obj.keys()
-                while (keys.hasNext()) {
-                    val key = keys.next()
-                    val shortKey = propertyMap[key] ?: key
-                    compactObj.put(shortKey, obj.get(key))
-                }
-                
-                compactArray.put(compactObj)
-            }
-            
-            return compactArray.toString()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error compactifying JSON: ${e.message}")
-            return jsonData // Return original on error
-        }
+        return jsonData
     }
     
     private fun retriggerElements() {
