@@ -90,7 +90,6 @@ class DroidrunPortalService : AccessibilityService() {
         super.onCreate()
         Log.d(TAG, "Service onCreate")
         try {
-            // Register broadcast receiver for commands
             val intentFilter = IntentFilter().apply {
                 addAction(ACTION_GET_ELEMENTS)
                 addAction(ACTION_TOGGLE_OVERLAY)
@@ -102,14 +101,11 @@ class DroidrunPortalService : AccessibilityService() {
             overlayManager = OverlayManager(this)
             isInitialized = true
             
-            // Get screen dimensions
             val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
             val display = windowManager.defaultDisplay
             val size = Point()
             display.getSize(size)
             screenBounds.set(0, 0, size.x, size.y)
-            
-            Log.d(TAG, "Screen bounds: $screenBounds")
         } catch (e: Exception) {
             Log.e(TAG, "Error initializing OverlayManager: ${e.message}", e)
             Log.e("DROIDRUN_RECEIVER", "Error in onCreate: ${e.message}", e)
@@ -119,7 +115,6 @@ class DroidrunPortalService : AccessibilityService() {
     override fun onDestroy() {
         Log.d(TAG, "Service onDestroy")
         try {
-            // Unregister broadcast receiver
             try {
                 unregisterReceiver(broadcastReceiver)
                 Log.e("DROIDRUN_RECEIVER", "Unregistered command receiver")
@@ -170,23 +165,19 @@ class DroidrunPortalService : AccessibilityService() {
     }
 
     private fun startPeriodicUpdates() {
-        Log.d(TAG, "Starting periodic updates")
         lastDrawTime = System.currentTimeMillis()
         mainHandler.postDelayed(updateRunnable, REFRESH_INTERVAL_MS)
     }
     
     private fun stopPeriodicUpdates() {
-        Log.d(TAG, "Stopping periodic updates")
         mainHandler.removeCallbacks(updateRunnable)
     }
     
     private fun startVisualizationUpdates() {
-        Log.d(TAG, "Starting visualization updates")
         mainHandler.postDelayed(visualizationRunnable, VISUALIZATION_REFRESH_MS)
     }
     
     private fun stopVisualizationUpdates() {
-        Log.d(TAG, "Stopping visualization updates")
         mainHandler.removeCallbacks(visualizationRunnable)
     }
     
@@ -285,7 +276,6 @@ class DroidrunPortalService : AccessibilityService() {
             }
             
             pendingVisualizationUpdate = false
-            Log.d(TAG, "Updated visualization with ${sortedElements.size} elements")
         } catch (e: Exception) {
             Log.e(TAG, "Error updating visualization: ${e.message}", e)
             pendingVisualizationUpdate = true  // Try again next frame
@@ -684,7 +674,6 @@ class DroidrunPortalService : AccessibilityService() {
         super.onServiceConnected()
         Log.d(TAG, "Service connected, initializing overlay")
         
-        // Start the overlay with a short delay
         mainHandler.postDelayed({
             try {
                 if (isInitialized) {
@@ -692,7 +681,6 @@ class DroidrunPortalService : AccessibilityService() {
                     startPeriodicUpdates()
                     mainHandler.post(visualizationRunnable)
                     
-                    // Send initial state to the MainActivity
                     val responseIntent = Intent(ACTION_ELEMENTS_RESPONSE).apply {
                         putExtra(EXTRA_OVERLAY_VISIBLE, overlayVisible)
                     }
@@ -706,21 +694,17 @@ class DroidrunPortalService : AccessibilityService() {
 
     private fun broadcastElementData() {
         try {
-            // Check if overlay is ready
             if (!isInitialized) {
                 Log.e("DROIDRUN_DEBUG", "Service not initialized yet")
                 return
             }
 
-            // First ensure the overlay is updated with current elements
             updateVisualizationIfNeeded()
             
-            // Small delay to ensure overlay is updated
             mainHandler.postDelayed({
                 try {
                     val elementsArray = JSONArray()
                     
-                    // Get all elements and filter for only clickable ones
                     val clickableElements = visibleElements.filter { element ->
                         element.nodeInfo.isClickable || 
                         element.nodeInfo.isCheckable ||
@@ -729,7 +713,6 @@ class DroidrunPortalService : AccessibilityService() {
                         element.nodeInfo.isFocusable
                     }.sortedBy { it.clickableIndex }
                     
-                    // Log clickable elements for debugging
                     Log.e("DROIDRUN_TEXT", "======= CLICKABLE ELEMENTS START =======")
                     clickableElements.forEach { element ->
                         val type = when {
@@ -744,14 +727,12 @@ class DroidrunPortalService : AccessibilityService() {
                     }
                     Log.e("DROIDRUN_TEXT", "======= CLICKABLE ELEMENTS END =======")
                     
-                    // Create JSON entries only for clickable elements
                     for (element in clickableElements) {
                         val elementJson = JSONObject().apply {
                             put("text", element.text)
                             put("className", element.className)
                             put("index", element.clickableIndex)
                             put("bounds", "${element.rect.left},${element.rect.top},${element.rect.right},${element.rect.bottom}")
-                            // Add type information
                             put("type", when {
                                 element.nodeInfo.isClickable -> "clickable"
                                 element.nodeInfo.isCheckable -> "checkable"
@@ -766,7 +747,6 @@ class DroidrunPortalService : AccessibilityService() {
                     
                     val jsonData = elementsArray.toString()
                     
-                    // Save to file
                     try {
                         val outputDir = getExternalFilesDir(null)
                         val jsonFile = java.io.File(outputDir, "element_data.json")
@@ -777,7 +757,6 @@ class DroidrunPortalService : AccessibilityService() {
                         Log.e("DROIDRUN_FILE", "Error writing to file: ${e.message}")
                     }
                     
-                    // Broadcast response
                     val responseIntent = Intent(ACTION_ELEMENTS_RESPONSE).apply {
                         putExtra(EXTRA_ELEMENTS_DATA, jsonData)
                     }
@@ -795,13 +774,6 @@ class DroidrunPortalService : AccessibilityService() {
         }
     }
     
-    /**
-     * Simplified JSON output - no longer needed
-     */
-    private fun compactifyJsonElements(jsonData: String): String {
-        return jsonData
-    }
-    
     private fun retriggerElements() {
         if (!isInitialized || visibleElements.isEmpty()) {
             Log.e("DROIDRUN_RECEIVER", "Cannot retrigger - service not initialized or no elements")
@@ -811,21 +783,16 @@ class DroidrunPortalService : AccessibilityService() {
         try {
             val now = System.currentTimeMillis()
             
-            // Reset all visible elements to have creation time of "now"
             for (element in visibleElements) {
                 element.creationTime = now
-                Log.d(TAG, "Reset element age: ${element.text}")
             }
             
-            // Update the data collection with fresh weights
             updateElementsForDataCollection()
             
-            // Update the visual display if visible
             if (overlayVisible) {
                 updateOverlayWithTimeBasedWeights()
             }
             
-            // Broadcast a confirmation response
             val responseIntent = Intent(ACTION_ELEMENTS_RESPONSE).apply {
                 putExtra("retrigger_status", "success")
                 putExtra("elements_count", visibleElements.size)
