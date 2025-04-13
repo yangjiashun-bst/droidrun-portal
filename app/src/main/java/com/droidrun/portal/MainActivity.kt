@@ -1,6 +1,7 @@
 package com.droidrun.portal
 
 import android.content.Context
+import android.content.Context.RECEIVER_EXPORTED
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
@@ -66,7 +67,7 @@ class MainActivity : AppCompatActivity() {
         
         // Register for responses
         val filter = IntentFilter(DroidrunPortalService.ACTION_ELEMENTS_RESPONSE)
-        registerReceiver(elementDataReceiver, filter)
+        registerReceiver(elementDataReceiver, filter, RECEIVER_EXPORTED)
         
         fetchButton.setOnClickListener {
             fetchElementData()

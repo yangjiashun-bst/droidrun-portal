@@ -17,10 +17,11 @@ data class ElementNode(
     var creationTime: Long,
     val id: String,
     var parent: ElementNode? = null,
-    val children: MutableList<ElementNode> = mutableListOf()
+    val children: MutableList<ElementNode> = mutableListOf(),
+    var clickableIndex: Int = -1,
+    var nestingLevel: Int = 0,
+    var semanticParentId: String? = null
 ) {
-    var clickableIndex: Int = -1  // Index for clickable elements only
-    
     companion object {
         private const val FADE_DURATION_MS = 60000L // Time to fade from weight 1.0 to 0.0 (60 seconds)
         
@@ -62,13 +63,20 @@ data class ElementNode(
     }
     
     // Calculate nesting level (depth in the hierarchy)
-    fun getNestingLevel(): Int {
-        var level = 0
-        var current = parent
-        while (current != null) {
-            level++
-            current = current.parent
+    fun calculateNestingLevel(): Int {
+        if (nestingLevel > 0) {
+            return nestingLevel
         }
+        
+        var current = this
+        var level = 0
+        
+        while (current.parent != null) {
+            level++
+            current = current.parent!!
+        }
+        
+        nestingLevel = level
         return level
     }
     
@@ -83,8 +91,10 @@ data class ElementNode(
     
     // Add a child node
     fun addChild(child: ElementNode) {
-        children.add(child)
-        child.parent = this
+        if (!children.contains(child)) {
+            children.add(child)
+            child.parent = this
+        }
     }
     
     // Remove a child node

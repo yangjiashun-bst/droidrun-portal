@@ -97,7 +97,6 @@ class OverlayManager(private val context: Context) {
                 try {
                     windowManager.addView(overlayView, params)
                     isOverlayVisible = true
-                    Log.d(TAG, "Overlay added successfully")
                     
                     // Set ready state and notify callback after a short delay to ensure view is laid out
                     handler.postDelayed({
@@ -147,7 +146,6 @@ class OverlayManager(private val context: Context) {
     fun clearElements() {
         elementRects.clear()
         elementIndexCounter = 0 // Reset the index counter when clearing elements
-        Log.d(TAG, "Elements cleared")
         refreshOverlay()
     }
 
@@ -156,7 +154,6 @@ class OverlayManager(private val context: Context) {
         val correctedRect = correctRectPosition(rect)
         val index = elementIndexCounter++
         elementRects.add(ElementInfo(correctedRect, type, text, depth, color, index))
-        Log.d(TAG, "Element added: $text (index $index) at $correctedRect (color: ${Integer.toHexString(color)})")
         // Don't refresh on each add to avoid excessive redraws with many elements
     }
     
@@ -177,7 +174,6 @@ class OverlayManager(private val context: Context) {
                 showOverlay()
             }
             overlayView?.invalidate()
-            Log.d(TAG, "Overlay refresh requested, element count: ${elementRects.size}")
         }
     }
 
@@ -219,7 +215,6 @@ class OverlayManager(private val context: Context) {
                     color = color,
                     index = index
                 )
-                Log.d(TAG, "Updated element: $text (index $index) with new color: ${Integer.toHexString(color)}")
             }
         } else {
             // If element doesn't exist, add it as a new element
@@ -232,7 +227,6 @@ class OverlayManager(private val context: Context) {
                 color = color,
                 index = index
             ))
-            Log.d(TAG, "Added new element during update: $text (index $index)")
         }
     }
     
@@ -328,8 +322,7 @@ class OverlayManager(private val context: Context) {
                 super.onDraw(canvas)
                 
                 val startTime = System.currentTimeMillis()
-                Log.d(TAG, "onDraw started, drawing ${elementRects.size} elements")
-                
+
                 if (elementRects.isEmpty()) {
                     if (isDebugging()) {
                         drawDebugRect(canvas)
@@ -348,7 +341,6 @@ class OverlayManager(private val context: Context) {
                 }
 
                 val drawTime = System.currentTimeMillis() - startTime
-                Log.d(TAG, "onDraw completed in ${drawTime}ms")
             } catch (e: Exception) {
                 Log.e(TAG, "Error in onDraw: ${e.message}", e)
             }

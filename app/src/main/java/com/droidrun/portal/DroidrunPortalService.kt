@@ -8,6 +8,7 @@ import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.content.Context
+import android.content.Context.RECEIVER_NOT_EXPORTED
 import android.graphics.Point
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityWindowInfo
@@ -18,6 +19,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlin.math.abs
 
 class DroidrunPortalService : AccessibilityService() {
     
@@ -42,7 +44,11 @@ class DroidrunPortalService : AccessibilityService() {
         const val ACTION_ELEMENTS_RESPONSE = "com.droidrun.portal.ELEMENTS_RESPONSE"
         const val ACTION_TOGGLE_OVERLAY = "com.droidrun.portal.TOGGLE_OVERLAY"
         const val ACTION_RETRIGGER_ELEMENTS = "com.droidrun.portal.RETRIGGER_ELEMENTS"
+        const val ACTION_GET_ALL_ELEMENTS = "com.droidrun.portal.GET_ALL_ELEMENTS"
+        const val ACTION_GET_INTERACTIVE_ELEMENTS = "com.droidrun.portal.GET_INTERACTIVE_ELEMENTS"
+        const val ACTION_FORCE_HIDE_OVERLAY = "com.droidrun.portal.FORCE_HIDE_OVERLAY"
         const val EXTRA_ELEMENTS_DATA = "elements_data"
+        const val EXTRA_ALL_ELEMENTS_DATA = "all_elements_data"
         const val EXTRA_OVERLAY_VISIBLE = "overlay_visible"
     }
     
@@ -64,23 +70,62 @@ class DroidrunPortalService : AccessibilityService() {
     
     // Broadcast receiver for ADB commands
     private val broadcastReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            when (intent?.action) {
+        override fun onReceive(context: Context, intent: Intent) {
+            when (intent.action) {
                 ACTION_GET_ELEMENTS -> {
+                    Log.e("DROIDRUN_RECEIVER", "Received GET_ELEMENTS command")
                     broadcastElementData()
                 }
+                ACTION_GET_INTERACTIVE_ELEMENTS -> {
+                    Log.e("DROIDRUN_RECEIVER", "Received GET_INTERACTIVE_ELEMENTS command")
+                    broadcastElementData() // Use the same implementation as GET_ELEMENTS
+                }
+                ACTION_GET_ALL_ELEMENTS -> {
+                    Log.e("DROIDRUN_RECEIVER", "Received GET_ALL_ELEMENTS command")
+                    broadcastAllElementsData()
+                }
                 ACTION_TOGGLE_OVERLAY -> {
+                    if (!isOverlayManagerAvailable()) {
+                        Log.e("DROIDRUN_RECEIVER", "Cannot toggle overlay: OverlayManager not initialized")
+                        return
+                    }
+                    
                     val shouldShow = intent.getBooleanExtra(EXTRA_OVERLAY_VISIBLE, !overlayVisible)
-                    if (shouldShow && !overlayVisible) {
+                    Log.e("DROIDRUN_RECEIVER", "Received TOGGLE_OVERLAY command: $shouldShow")
+                    if (shouldShow) {
                         overlayManager.showOverlay()
                         overlayVisible = true
-                    } else if (!shouldShow && overlayVisible) {
+                    } else {
                         overlayManager.hideOverlay()
                         overlayVisible = false
                     }
+                    val responseIntent = Intent(ACTION_ELEMENTS_RESPONSE).apply {
+                        putExtra(EXTRA_OVERLAY_VISIBLE, overlayVisible)
+                    }
+                    sendBroadcast(responseIntent)
                 }
                 ACTION_RETRIGGER_ELEMENTS -> {
+                    Log.e("DROIDRUN_RECEIVER", "Received RETRIGGER_ELEMENTS command")
                     retriggerElements()
+                }
+                ACTION_FORCE_HIDE_OVERLAY -> {
+                    Log.e("DROIDRUN_RECEIVER", "Received FORCE_HIDE_OVERLAY command")
+                    if (isOverlayManagerAvailable()) {
+                        overlayManager.hideOverlay()
+                        overlayVisible = false
+                        overlayManager.clearElements()
+                        overlayManager.refreshOverlay()
+                        
+                        // Send confirmation
+                        val responseIntent = Intent(ACTION_ELEMENTS_RESPONSE).apply {
+                            putExtra(EXTRA_OVERLAY_VISIBLE, false)
+                            putExtra("force_hide_successful", true)
+                        }
+                        sendBroadcast(responseIntent)
+                        Log.e("DROIDRUN_RECEIVER", "Overlay forcibly hidden")
+                    } else {
+                        Log.e("DROIDRUN_RECEIVER", "Cannot hide overlay: OverlayManager not initialized")
+                    }
                 }
             }
         }
@@ -92,10 +137,13 @@ class DroidrunPortalService : AccessibilityService() {
         try {
             val intentFilter = IntentFilter().apply {
                 addAction(ACTION_GET_ELEMENTS)
+                addAction(ACTION_GET_INTERACTIVE_ELEMENTS)
+                addAction(ACTION_GET_ALL_ELEMENTS)
                 addAction(ACTION_TOGGLE_OVERLAY)
                 addAction(ACTION_RETRIGGER_ELEMENTS)
+                addAction(ACTION_FORCE_HIDE_OVERLAY)
             }
-            registerReceiver(broadcastReceiver, intentFilter)
+            registerReceiver(broadcastReceiver, intentFilter, RECEIVER_NOT_EXPORTED)
             Log.e("DROIDRUN_RECEIVER", "Registered receiver for commands")
             
             overlayManager = OverlayManager(this)
@@ -182,7 +230,7 @@ class DroidrunPortalService : AccessibilityService() {
     }
     
     private fun updateVisualizationIfNeeded() {
-        if (!isInitialized || visibleElements.isEmpty()) {
+        if (!isOverlayManagerAvailable() || visibleElements.isEmpty()) {
             pendingVisualizationUpdate = false
             return
         }
@@ -210,7 +258,7 @@ class DroidrunPortalService : AccessibilityService() {
                 } else {
                     // Check if weights have changed significantly
                     displayedElements.zip(weightSortedElements).any { (current, new) ->
-                        Math.abs(current.second - new.second) > 0.05f
+                        abs(current.second - new.second) > 0.05f
                     }
                 }
             }
@@ -234,7 +282,7 @@ class DroidrunPortalService : AccessibilityService() {
                     elementsToDisplay.add(currentElement)
                 } else {
                     val showDespiteOverlap = overlappingElements.any { (existingElement, _) ->
-                        val timeDiff = Math.abs(existingElement.creationTime - element.creationTime)
+                        val timeDiff = abs(existingElement.creationTime - element.creationTime)
                         timeDiff <= SAME_TIME_THRESHOLD_MS
                     }
                     
@@ -286,7 +334,6 @@ class DroidrunPortalService : AccessibilityService() {
         val eventPackage = event.packageName?.toString() ?: ""
         
         if (eventPackage.isNotEmpty() && eventPackage != currentPackageName && currentPackageName.isNotEmpty()) {
-            Log.d(TAG, "App changed from $currentPackageName to $eventPackage, clearing overlay")
             resetOverlayState()
         }
         
@@ -305,6 +352,11 @@ class DroidrunPortalService : AccessibilityService() {
     
     private fun resetOverlayState() {
         try {
+            if (!isOverlayManagerAvailable()) {
+                Log.d(TAG, "OverlayManager not yet initialized, skipping reset")
+                return
+            }
+            
             overlayManager.clearElements()
             overlayManager.refreshOverlay()
             
@@ -319,7 +371,6 @@ class DroidrunPortalService : AccessibilityService() {
             }
             previousElements.clear()
             
-            Log.d(TAG, "Overlay state reset due to app change")
         } catch (e: Exception) {
             Log.e(TAG, "Error resetting overlay state: ${e.message}", e)
         }
@@ -331,6 +382,12 @@ class DroidrunPortalService : AccessibilityService() {
         }
         
         try {
+            if (!isOverlayManagerAvailable()) {
+                Log.d(TAG, "OverlayManager not yet initialized, skipping process")
+                isProcessing.set(false)
+                return
+            }
+            
             if (currentPackageName.isEmpty()) {
                 if (overlayVisible) {
                     overlayManager.clearElements()
@@ -379,7 +436,6 @@ class DroidrunPortalService : AccessibilityService() {
                 updateOverlayWithTimeBasedWeights()
             }
             
-            Log.d(TAG, "Processed ${visibleElements.size} elements for package $currentPackageName")
         } catch (e: Exception) {
             Log.e(TAG, "Error processing active window: ${e.message}", e)
             if (overlayVisible) {
@@ -421,9 +477,7 @@ class DroidrunPortalService : AccessibilityService() {
             
             if (previousElement != null) {
                 element.creationTime = previousElement.creationTime
-                Log.d(TAG, "Element persists: ${element.text}, age: ${System.currentTimeMillis() - element.creationTime}ms")
             } else {
-                Log.d(TAG, "New element: ${element.text}")
             }
         }
     }
@@ -472,14 +526,13 @@ class DroidrunPortalService : AccessibilityService() {
                 val elementNode = ElementNode(
                     AccessibilityNodeInfo.obtain(node),
                     Rect(rect),
-                    displayText.take(30),
+                    displayText,
                     className.substringAfterLast('.'),
                     windowLayer,
                     System.currentTimeMillis(),
                     id
                 )
                 visibleElements.add(elementNode)
-                Log.d(TAG, "Found $elementType: ${displayText} [${className.substringAfterLast('.')}] at $rect")
             }
             
             for (i in 0 until node.childCount) {
@@ -518,25 +571,21 @@ class DroidrunPortalService : AccessibilityService() {
     // This method processes elements for data collection without affecting the UI
     private fun updateElementsForDataCollection() {
         try {
-            Log.d(TAG, "Starting element processing with ${visibleElements.size} elements")
             
             // First, sort all elements by creation time (oldest first)
             val sortedElements = visibleElements.sortedBy { it.creationTime }
-            Log.d(TAG, "Sorted elements by creation time")
             
             // Clear existing relationships
             for (element in visibleElements) {
                 element.parent = null
                 element.children.clear()
             }
-            Log.d(TAG, "Cleared existing relationships")
             
             // Build the hierarchy - but limit nesting depth to avoid cycles
             val processedElements = mutableSetOf<String>() // Track processed elements by ID
             
             for (element in sortedElements) {
                 if (processedElements.contains(element.id)) {
-                    Log.w(TAG, "Element ${element.text} already processed, skipping")
                     continue
                 }
                 
@@ -552,10 +601,8 @@ class DroidrunPortalService : AccessibilityService() {
                 
                 if (bestContainer != null) {
                     bestContainer.addChild(element)
-                    Log.d(TAG, "Added ${element.text} as child of ${bestContainer.text}")
                 } else {
                     element.parent = null
-                    Log.d(TAG, "Kept ${element.text} as root element")
                 }
                 
                 processedElements.add(element.id)
@@ -571,11 +618,9 @@ class DroidrunPortalService : AccessibilityService() {
             
             // Then assign new indices to qualifying elements
             val clickableElements = sortedElements.filter { it.isClickable() || it.isText() }
-            Log.d(TAG, "Found ${clickableElements.size} clickable/text elements")
             
             for (element in clickableElements) {
                 element.clickableIndex = clickableIndex++
-                Log.d(TAG, "Assigned index ${element.clickableIndex} to ${element.text}")
             }
             
             // Update the displayed elements list with the hierarchy information
@@ -591,10 +636,8 @@ class DroidrunPortalService : AccessibilityService() {
                 }
                 
                 displayedElements.addAll(visibleWeightElements)
-                Log.d(TAG, "Updated displayed elements, now showing ${displayedElements.size} elements")
             }
             
-            Log.d(TAG, "Completed hierarchy build with ${sortedElements.size} elements, ${clickableIndex} clickable/text elements")
         } catch (e: Exception) {
             Log.e(TAG, "Error in updateElementsForDataCollection: ${e.message}", e)
         }
@@ -602,18 +645,15 @@ class DroidrunPortalService : AccessibilityService() {
     
     private fun updateOverlayWithTimeBasedWeights() {
         try {
-            if (!overlayVisible) {
-                Log.d(TAG, "Overlay not visible, skipping update")
+            if (!isOverlayManagerAvailable() || !overlayVisible) {
                 return
             }
-            
-            Log.d(TAG, "Starting overlay update with ${displayedElements.size} elements")
             
             overlayManager.clearElements()
             
             // Process elements in order of nesting (parents before children)
             val elementsByNesting = displayedElements.sortedBy { (element, _) -> 
-                element.getNestingLevel() 
+                element.calculateNestingLevel() 
             }
             
             var addedCount = 0
@@ -632,18 +672,16 @@ class DroidrunPortalService : AccessibilityService() {
                         rect = element.rect,
                         type = "${element.className}",
                         text = label,
-                        depth = element.getNestingLevel(),
+                        depth = element.calculateNestingLevel(),
                         color = heatmapColor
                     )
                     addedCount++
                     
-                    Log.d(TAG, "Added element to overlay: ${element.text} with label $label")
                 } catch (e: Exception) {
                     Log.e(TAG, "Error adding element ${element.text}: ${e.message}", e)
                 }
             }
             
-            Log.d(TAG, "Added $addedCount elements to overlay, refreshing display")
             overlayManager.refreshOverlay()
             
         } catch (e: Exception) {
@@ -665,7 +703,7 @@ class DroidrunPortalService : AccessibilityService() {
     override fun onInterrupt() {
         Log.d(TAG, "Service interrupted")
         // Clear overlay when service is interrupted
-        if (isInitialized) {
+        if (isOverlayManagerAvailable()) {
             resetOverlayState()
         }
     }
@@ -676,7 +714,7 @@ class DroidrunPortalService : AccessibilityService() {
         
         mainHandler.postDelayed({
             try {
-                if (isInitialized) {
+                if (isOverlayManagerAvailable()) {
                     overlayManager.showOverlay()
                     startPeriodicUpdates()
                     mainHandler.post(visualizationRunnable)
@@ -685,11 +723,19 @@ class DroidrunPortalService : AccessibilityService() {
                         putExtra(EXTRA_OVERLAY_VISIBLE, overlayVisible)
                     }
                     sendBroadcast(responseIntent)
+                } else {
+                    Log.e(TAG, "OverlayManager not initialized in onServiceConnected")
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error showing overlay: ${e.message}", e)
             }
         }, 1000)
+    }
+
+    private fun sanitizeText(text: String?): String {
+        if (text == null) return ""
+        // Remove control characters (0-31) that can break JSON
+        return text.replace(Regex("[\u0000-\u001F]"), "")
     }
 
     private fun broadcastElementData() {
@@ -703,47 +749,163 @@ class DroidrunPortalService : AccessibilityService() {
             
             mainHandler.postDelayed({
                 try {
-                    val elementsArray = JSONArray()
+                    // Create a list to track all interactive elements
+                    val interactiveElements = mutableListOf<ElementNode>()
+                    val rootElements = mutableListOf<ElementNode>()
+                    val childrenMap = mutableMapOf<String, MutableList<ElementNode>>()
+                    val processedAsChild = mutableSetOf<String>()
                     
-                    val clickableElements = visibleElements.filter { element ->
+                    // Identify all interactive elements (clickable, checkable, editable, etc.)
+                    val clickableContainers = visibleElements.filter { element ->
                         element.nodeInfo.isClickable || 
                         element.nodeInfo.isCheckable ||
                         element.nodeInfo.isEditable ||
                         element.nodeInfo.isScrollable ||
                         element.nodeInfo.isFocusable
-                    }.sortedBy { it.clickableIndex }
-                    
-                    Log.e("DROIDRUN_TEXT", "======= CLICKABLE ELEMENTS START =======")
-                    clickableElements.forEach { element ->
-                        val type = when {
-                            element.nodeInfo.isClickable -> "CLICK"
-                            element.nodeInfo.isCheckable -> "CHECK"
-                            element.nodeInfo.isEditable -> "INPUT"
-                            element.nodeInfo.isScrollable -> "SCROLL"
-                            element.nodeInfo.isFocusable -> "FOCUS"
-                            else -> "OTHER"
-                        }
-                        Log.e("DROIDRUN_TEXT", "${element.clickableIndex}: $type - ${element.text}")
                     }
-                    Log.e("DROIDRUN_TEXT", "======= CLICKABLE ELEMENTS END =======")
                     
-                    for (element in clickableElements) {
-                        val elementJson = JSONObject().apply {
-                            put("text", element.text)
-                            put("className", element.className)
+                    // First pass: Build containment hierarchy
+                    // Find all potential parent-child relationships
+                    for (container in clickableContainers) {
+                        // Find all elements that could be children of this container
+                        val possibleChildren = visibleElements.filter { element ->
+                            element != container &&  // Not the container itself
+                            isWithinBounds(element.rect, container.rect) // Within container bounds
+                        }
+                        
+                        // Only consider direct children (not contained in other children)
+                        val directChildren = possibleChildren.filter { child ->
+                            // Child is not contained by any other possible child
+                            possibleChildren.none { otherChild -> 
+                                otherChild != child && isWithinBounds(child.rect, otherChild.rect)
+                            }
+                        }
+                        
+                        if (directChildren.isNotEmpty()) {
+                            // This element has children, store them for later processing
+                            childrenMap[container.id] = directChildren.toMutableList()
+                            
+                            // Mark all these children as processed so they don't appear at root level
+                            for (child in directChildren) {
+                                processedAsChild.add(child.id)
+                            }
+                        }
+                    }
+                    
+                    // Second pass: Find true root elements (not children of any other element)
+                    for (container in clickableContainers) {
+                        if (!processedAsChild.contains(container.id)) {
+                            rootElements.add(container)
+                        }
+                    }
+                    
+                    // Now assign indices to ALL elements consistently
+                    var uniqueIndex = 0
+                    
+                    // First assign indices to root elements
+                    for (element in rootElements) {
+                        element.clickableIndex = uniqueIndex++
+                        interactiveElements.add(element)
+                    }
+                    
+                    // Then assign indices to all children recursively
+                    val processedIndices = mutableSetOf<String>()
+                    
+                    fun assignIndices(parentId: String) {
+                        if (processedIndices.contains(parentId)) return
+                        processedIndices.add(parentId)
+                        
+                        val children = childrenMap[parentId] ?: return
+                        
+                        for (child in children) {
+                            child.clickableIndex = uniqueIndex++
+                            interactiveElements.add(child)
+                            
+                            // Recursively process any grandchildren
+                            if (childrenMap.containsKey(child.id)) {
+                                assignIndices(child.id)
+                            }
+                        }
+                    }
+                    
+                    // Process all root elements to assign indices to whole tree
+                    for (root in rootElements) {
+                        if (childrenMap.containsKey(root.id)) {
+                            assignIndices(root.id)
+                        }
+                    }
+                    
+                    // Log statistics
+                    Log.e("DROIDRUN_TEXT", "======= INTERACTIVE ELEMENTS START =======")
+                    Log.e("DROIDRUN_TEXT", "Found ${interactiveElements.size} interactive elements, ${rootElements.size} root elements")
+                    
+                    // Create the HTML-like structure as a JSON array - ONLY include root elements at top level
+                    val elementsArray = JSONArray()
+                    
+                    // Helper function to recursively build the element tree with children
+                    fun buildElementJson(element: ElementNode): JSONObject {
+                        return JSONObject().apply {
+                            // Basic properties
+                            put("text", sanitizeText(element.text ?: ""))
+                            put("className", sanitizeText(element.className))
                             put("index", element.clickableIndex)
                             put("bounds", "${element.rect.left},${element.rect.top},${element.rect.right},${element.rect.bottom}")
+                            
+                            // Add interactive type
                             put("type", when {
                                 element.nodeInfo.isClickable -> "clickable"
                                 element.nodeInfo.isCheckable -> "checkable"
                                 element.nodeInfo.isEditable -> "input"
                                 element.nodeInfo.isScrollable -> "scrollable"
                                 element.nodeInfo.isFocusable -> "focusable"
-                                else -> "other"
+                                else -> "text"
                             })
+                            
+                            // Add children if this element has any
+                            if (childrenMap.containsKey(element.id)) {
+                                val children = childrenMap[element.id]?.sortedBy { it.clickableIndex } ?: emptyList()
+                                if (children.isNotEmpty()) {
+                                    val childrenArray = JSONArray()
+                                    for (child in children) {
+                                        val childJson = buildElementJson(child)
+                                        childrenArray.put(childJson)
+                                    }
+                                    put("children", childrenArray)
+                                }
+                            }
                         }
+                    }
+                    
+                    // Process only root elements for the top-level array
+                    rootElements.sortedBy { it.clickableIndex }.forEach { element ->
+                        val elementJson = buildElementJson(element)
                         elementsArray.put(elementJson)
                     }
+                    
+                    // Log each element with its index for debugging purposes only
+                    for (element in interactiveElements.sortedBy { it.clickableIndex }) {
+                        val type = when {
+                            element.nodeInfo.isClickable -> "CLICK"
+                            element.nodeInfo.isCheckable -> "CHECK"
+                            element.nodeInfo.isEditable -> "INPUT"
+                            element.nodeInfo.isScrollable -> "SCROLL"
+                            element.nodeInfo.isFocusable -> "FOCUS"
+                            else -> "TEXT"
+                        }
+                        
+                        // Mark if this is a root element or a child
+                        val role = if (rootElements.contains(element)) "ROOT" else "CHILD"
+                        val parentInfo = if (role == "CHILD") {
+                            val parent = visibleElements.find { container -> 
+                                childrenMap.containsKey(container.id) && 
+                                childrenMap[container.id]?.contains(element) == true 
+                            }
+                            " (parent: ${parent?.text?.take(20) ?: "unknown"})"
+                        } else ""
+                        
+                        Log.e("DROIDRUN_TEXT", "${element.clickableIndex}: $type - $role$parentInfo - ${sanitizeText(element.text ?: "")} (${element.className})")
+                    }
+                    Log.e("DROIDRUN_TEXT", "======= INTERACTIVE ELEMENTS END =======")
                     
                     val jsonData = elementsArray.toString()
                     
@@ -752,7 +914,16 @@ class DroidrunPortalService : AccessibilityService() {
                         val jsonFile = java.io.File(outputDir, "element_data.json")
                         jsonFile.writeText(jsonData)
                         Log.e("DROIDRUN_FILE", "JSON data written to: ${jsonFile.absolutePath}")
-                        Log.e("DROIDRUN_ADB_DATA", jsonData)
+                        
+                        // Split the JSON data into chunks to avoid logcat truncation
+                        val maxChunkSize = 4000
+                        val chunks = jsonData.chunked(maxChunkSize)
+                        val totalChunks = chunks.size
+                        
+                        // Output each chunk with metadata for reassembly
+                        chunks.forEachIndexed { index, chunk ->
+                            Log.e("DROIDRUN_ADB_DATA", "CHUNK|$index|$totalChunks|$chunk")
+                        }
                     } catch (e: Exception) {
                         Log.e("DROIDRUN_FILE", "Error writing to file: ${e.message}")
                     }
@@ -772,6 +943,12 @@ class DroidrunPortalService : AccessibilityService() {
             Log.e(TAG, "Error broadcasting element data: ${e.message}", e)
             Log.e("DROIDRUN_ADB_RESPONSE", "ERROR: ${e.message}")
         }
+    }
+    
+    // Helper function to check if one rectangle is within another
+    private fun isWithinBounds(inner: Rect, outer: Rect): Boolean {
+        return inner.left >= outer.left && inner.right <= outer.right &&
+               inner.top >= outer.top && inner.bottom <= outer.bottom
     }
     
     private fun retriggerElements() {
@@ -804,5 +981,195 @@ class DroidrunPortalService : AccessibilityService() {
             Log.e(TAG, "Error retriggering elements: ${e.message}", e)
             Log.e("DROIDRUN_RETRIGGER", "ERROR: ${e.message}")
         }
+    }
+
+    private fun broadcastAllElementsData() {
+        try {
+            if (!isInitialized) {
+                Log.e("DROIDRUN_DEBUG", "Service not initialized yet")
+                return
+            }
+
+            updateVisualizationIfNeeded()
+            
+            mainHandler.postDelayed({
+                try {
+                    // Create tracking structures for all elements
+                    val allElementsList = mutableListOf<ElementNode>()
+                    val rootElements = mutableListOf<ElementNode>()
+                    val childrenMap = mutableMapOf<String, MutableList<ElementNode>>()
+                    val processedAsChild = mutableSetOf<String>()
+                    
+                    // First pass: Find all potential containers (elements that can contain others)
+                    val potentialContainers = visibleElements.filter { element ->
+                        // Consider all elements as potential containers, not just interactive ones
+                        element.rect.width() > 0 && element.rect.height() > 0
+                    }
+                    
+                    // Build the containment hierarchy
+                    for (container in potentialContainers) {
+                        // Find all elements contained within this container
+                        val possibleChildren = visibleElements.filter { element ->
+                            element != container &&  // Not the container itself
+                            isWithinBounds(element.rect, container.rect) && // Within container bounds
+                            !processedAsChild.contains(element.id) // Not already processed as a child
+                        }
+                        
+                        // Only consider direct children (not contained in other children)
+                        val directChildren = possibleChildren.filter { child ->
+                            // A direct child is not contained by any other child of this container
+                            possibleChildren.none { otherChild -> 
+                                otherChild != child && isWithinBounds(child.rect, otherChild.rect)
+                            }
+                        }
+                        
+                        if (directChildren.isNotEmpty()) {
+                            // This element has children, store them for later processing
+                            childrenMap[container.id] = directChildren.toMutableList()
+                            
+                            // Mark all these children as processed so they don't appear at root level
+                            for (child in directChildren) {
+                                processedAsChild.add(child.id)
+                            }
+                        }
+                    }
+                    
+                    // Second pass: Find root elements (not contained within any other element)
+                    for (element in visibleElements) {
+                        if (!processedAsChild.contains(element.id)) {
+                            rootElements.add(element)
+                        }
+                    }
+                    
+                    // Now assign indices to ALL elements in the tree
+                    var uniqueIndex = 0
+                    
+                    // First assign indices to root elements
+                    for (element in rootElements) {
+                        element.clickableIndex = uniqueIndex++
+                        allElementsList.add(element)
+                    }
+                    
+                    // Then assign indices to all children recursively
+                    val processedIndices = mutableSetOf<String>()
+                    
+                    fun assignIndices(parentId: String) {
+                        if (processedIndices.contains(parentId)) return
+                        processedIndices.add(parentId)
+                        
+                        val children = childrenMap[parentId] ?: return
+                        
+                        for (child in children) {
+                            child.clickableIndex = uniqueIndex++
+                            allElementsList.add(child)
+                            
+                            // Recursively process any grandchildren
+                            if (childrenMap.containsKey(child.id)) {
+                                assignIndices(child.id)
+                            }
+                        }
+                    }
+                    
+                    // Process all root elements to assign indices to whole tree
+                    for (root in rootElements) {
+                        if (childrenMap.containsKey(root.id)) {
+                            assignIndices(root.id)
+                        }
+                    }
+                    
+                    // Log statistics
+                    Log.e("DROIDRUN_TEXT", "======= ALL ELEMENTS START =======")
+                    Log.e("DROIDRUN_TEXT", "Found ${allElementsList.size} total elements, ${rootElements.size} root elements")
+                    
+                    // Create the HTML-like structure as a JSON array
+                    val elementsArray = JSONArray()
+                    
+                    // Helper function to recursively build the element tree with children
+                    fun buildElementJson(element: ElementNode): JSONObject {
+                        return JSONObject().apply {
+                            // Basic properties
+                            put("text", sanitizeText(element.text))
+                            put("className", sanitizeText(element.className))
+                            put("index", element.clickableIndex)
+                            put("bounds", "${element.rect.left},${element.rect.top},${element.rect.right},${element.rect.bottom}")
+                            
+                            // Element type
+                            put("type", when {
+                                element.nodeInfo.isClickable -> "clickable"
+                                element.nodeInfo.isCheckable -> "checkable"
+                                element.nodeInfo.isEditable -> "input"
+                                element.nodeInfo.isScrollable -> "scrollable"
+                                element.nodeInfo.isFocusable -> "focusable"
+                                element.text.isNotEmpty() -> "text"
+                                else -> "view"
+                            })
+                            
+                            // Add children if this element has any
+                            if (childrenMap.containsKey(element.id)) {
+                                val children = childrenMap[element.id]?.sortedBy { it.clickableIndex } ?: emptyList()
+                                if (children.isNotEmpty()) {
+                                    val childrenArray = JSONArray()
+                                    for (child in children) {
+                                        val childJson = buildElementJson(child)
+                                        childrenArray.put(childJson)
+                                    }
+                                    put("children", childrenArray)
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Process only root elements for the top-level array
+                    rootElements.sortedBy { it.clickableIndex }.forEach { element ->
+                        val elementJson = buildElementJson(element)
+                        elementsArray.put(elementJson)
+                    }
+                    
+                    // Log element counts for debugging
+                    Log.e("DROIDRUN_TEXT", "Total root elements: ${rootElements.size}")
+                    Log.e("DROIDRUN_TEXT", "Total elements in hierarchy: ${allElementsList.size}")
+                    Log.e("DROIDRUN_TEXT", "======= ALL ELEMENTS END =======")
+                    
+                    val jsonData = elementsArray.toString()
+                    
+                    try {
+                        val outputDir = getExternalFilesDir(null)
+                        val jsonFile = java.io.File(outputDir, "all_elements_data.json")
+                        jsonFile.writeText(jsonData)
+                        Log.e("DROIDRUN_FILE", "All elements JSON data written to: ${jsonFile.absolutePath}")
+                        
+                        // Split the JSON data into chunks to avoid logcat truncation
+                        val maxChunkSize = 4000
+                        val chunks = jsonData.chunked(maxChunkSize)
+                        val totalChunks = chunks.size
+                        
+                        // Output each chunk with metadata for reassembly
+                        chunks.forEachIndexed { index, chunk ->
+                            Log.e("DROIDRUN_ADB_ALL_DATA", "CHUNK|$index|$totalChunks|$chunk")
+                        }
+                    } catch (e: Exception) {
+                        Log.e("DROIDRUN_FILE", "Error writing all elements to file: ${e.message}")
+                    }
+                    
+                    val responseIntent = Intent(ACTION_ELEMENTS_RESPONSE).apply {
+                        putExtra(EXTRA_ALL_ELEMENTS_DATA, "Size: ${jsonData.length} bytes, Elements: ${allElementsList.size}")
+                    }
+                    sendBroadcast(responseIntent)
+                    
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error processing all elements: ${e.message}", e)
+                    Log.e("DROIDRUN_ADB_RESPONSE", "ERROR: ${e.message}")
+                }
+            }, 100)
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error broadcasting all element data: ${e.message}", e)
+            Log.e("DROIDRUN_ADB_RESPONSE", "ERROR: ${e.message}")
+        }
+    }
+
+    // Helper method to check if overlayManager is available
+    private fun isOverlayManagerAvailable(): Boolean {
+        return this::overlayManager.isInitialized && isInitialized
     }
 } 
