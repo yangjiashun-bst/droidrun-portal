@@ -1,4 +1,4 @@
-package com.example.droidrun
+package com.droidrun.portal
 
 import org.junit.Test
 

@@ -19,17 +19,17 @@ done
 echo "🔍 Droidrun Portal - Fetching UI element data..."
 if [ "$INTERACTIVE" = true ]; then
     echo "Mode: Interactive elements only"
-    adb shell am broadcast -a com.example.droidrun.GET_INTERACTIVE_ELEMENTS
+    adb shell am broadcast -a com.droidrun.portal.GET_INTERACTIVE_ELEMENTS
 else
     echo "Mode: All elements"
-    adb shell am broadcast -a com.example.droidrun.GET_ELEMENTS
+    adb shell am broadcast -a com.droidrun.portal.GET_ELEMENTS
 fi
 
 echo "⏳ Waiting for response..."
 sleep 2  # Give time for the service to process
 
 echo "📥 Retrieving element data from files..."
-PACKAGE_NAME="com.example.droidrun"
+PACKAGE_NAME="com.droidrun.portal"
 APP_FILES_DIR="/storage/emulated/0/Android/data/$PACKAGE_NAME/files"
 
 # Create output directory if it doesn't exist

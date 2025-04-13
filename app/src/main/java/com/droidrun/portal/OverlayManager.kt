@@ -1,4 +1,4 @@
-package com.example.droidrun
+package com.droidrun.portal
 
 import android.content.Context
 import android.graphics.Canvas

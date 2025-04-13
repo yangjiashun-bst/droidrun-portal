@@ -1,4 +1,4 @@
-package com.example.droidrun
+package com.droidrun.portal
 
 import android.accessibilityservice.AccessibilityService
 import android.graphics.Rect
@@ -38,10 +38,10 @@ class DroidrunPortalService : AccessibilityService() {
         private val OLD_ELEMENT_COLOR = Color.BLUE        // Oldest elements
         
         // Intent actions for ADB communication
-        const val ACTION_GET_ELEMENTS = "com.example.droidrun.GET_ELEMENTS"
-        const val ACTION_ELEMENTS_RESPONSE = "com.example.droidrun.ELEMENTS_RESPONSE"
-        const val ACTION_TOGGLE_OVERLAY = "com.example.droidrun.TOGGLE_OVERLAY"
-        const val ACTION_RETRIGGER_ELEMENTS = "com.example.droidrun.RETRIGGER_ELEMENTS"
+        const val ACTION_GET_ELEMENTS = "com.droidrun.portal.GET_ELEMENTS"
+        const val ACTION_ELEMENTS_RESPONSE = "com.droidrun.portal.ELEMENTS_RESPONSE"
+        const val ACTION_TOGGLE_OVERLAY = "com.droidrun.portal.TOGGLE_OVERLAY"
+        const val ACTION_RETRIGGER_ELEMENTS = "com.droidrun.portal.RETRIGGER_ELEMENTS"
         const val EXTRA_ELEMENTS_DATA = "elements_data"
         const val EXTRA_OVERLAY_VISIBLE = "overlay_visible"
     }

@@ -38,13 +38,13 @@ Droidrun Portal is an Android accessibility service that provides real-time visu
 ### 💻 ADB Commands
 ```bash
 # Get all current elements as JSON
-adb shell am broadcast -a com.example.droidrun.GET_ELEMENTS
+adb shell am broadcast -a com.droidrun.portal.GET_ELEMENTS
 
 # Toggle overlay visibility
-adb shell am broadcast -a com.example.droidrun.TOGGLE_OVERLAY --ez overlay_visible true/false
+adb shell am broadcast -a com.droidrun.portal.TOGGLE_OVERLAY --ez overlay_visible true/false
 
 # Reset element timestamps (useful for testing)
-adb shell am broadcast -a com.example.droidrun.RETRIGGER_ELEMENTS
+adb shell am broadcast -a com.droidrun.portal.RETRIGGER_ELEMENTS
 ```
 
 ### 📤 Data Output

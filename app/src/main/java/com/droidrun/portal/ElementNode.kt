@@ -1,4 +1,4 @@
-package com.example.droidrun
+package com.droidrun.portal
 
 import android.graphics.Rect
 import android.view.accessibility.AccessibilityNodeInfo

@@ -3,7 +3,7 @@
 # Script to retrigger UI elements in the Droidrun Portal service, resetting their weights to 1.0
 
 echo "🔄 Droidrun Portal - Refreshing UI elements..."
-adb shell am broadcast -a com.example.droidrun.RETRIGGER_ELEMENTS
+adb shell am broadcast -a com.droidrun.portal.RETRIGGER_ELEMENTS
 
 echo "⏳ Waiting for response..."
 sleep 1
