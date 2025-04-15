@@ -9,6 +9,7 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.content.Context
 import android.content.Context.RECEIVER_NOT_EXPORTED
+import android.content.Context.RECEIVER_EXPORTED
 import android.graphics.Point
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityWindowInfo
@@ -143,8 +144,8 @@ class DroidrunPortalService : AccessibilityService() {
                 addAction(ACTION_RETRIGGER_ELEMENTS)
                 addAction(ACTION_FORCE_HIDE_OVERLAY)
             }
-            registerReceiver(broadcastReceiver, intentFilter, RECEIVER_NOT_EXPORTED)
-            Log.e("DROIDRUN_RECEIVER", "Registered receiver for commands")
+            registerReceiver(broadcastReceiver, intentFilter, RECEIVER_EXPORTED)
+            Log.e("DROIDRUN_RECEIVER", "Registered receiver for commands with EXPORTED flag")
             
             overlayManager = OverlayManager(this)
             isInitialized = true
