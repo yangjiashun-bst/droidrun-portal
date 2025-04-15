@@ -1,0 +1,260 @@
+[
+  {
+    "text": "workspace",
+    "className": "ScrollView",
+    "index": 0,
+    "bounds": "0,0,1080,2400",
+    "type": "scrollable"
+  },
+  {
+    "text": "At a Glance",
+    "className": "LauncherAppWidgetHostView",
+    "index": 1,
+    "bounds": "22,146,1058,475",
+    "type": "focusable"
+  },
+  {
+    "text": "FrameLayout",
+    "className": "FrameLayout",
+    "index": 2,
+    "bounds": "116,206,652,413",
+    "type": "clickable"
+  },
+  {
+    "text": "FrameLayout",
+    "className": "FrameLayout",
+    "index": 3,
+    "bounds": "652,206,778,413",
+    "type": "clickable",
+    "children": [
+      {
+        "text": "ImageView",
+        "className": "ImageView",
+        "index": 33,
+        "bounds": "652,206,778,413",
+        "type": "text"
+      }
+    ]
+  },
+  {
+    "text": "FrameLayout",
+    "className": "FrameLayout",
+    "index": 4,
+    "bounds": "799,206,1006,413",
+    "type": "clickable"
+  },
+  {
+    "text": "Phantom",
+    "className": "TextView",
+    "index": 5,
+    "bounds": "22,475,281,804",
+    "type": "clickable"
+  },
+  {
+    "text": "Bonk App",
+    "className": "TextView",
+    "index": 6,
+    "bounds": "281,475,540,804",
+    "type": "clickable"
+  },
+  {
+    "text": "Jupiter",
+    "className": "TextView",
+    "index": 7,
+    "bounds": "540,475,799,804",
+    "type": "clickable"
+  },
+  {
+    "text": "Dialect",
+    "className": "TextView",
+    "index": 8,
+    "bounds": "799,475,1058,804",
+    "type": "clickable"
+  },
+  {
+    "text": "Solflare",
+    "className": "TextView",
+    "index": 9,
+    "bounds": "22,804,281,1133",
+    "type": "clickable"
+  },
+  {
+    "text": "Marinade",
+    "className": "TextView",
+    "index": 10,
+    "bounds": "281,804,540,1133",
+    "type": "clickable"
+  },
+  {
+    "text": "Solend Mobile",
+    "className": "TextView",
+    "index": 11,
+    "bounds": "540,804,799,1133",
+    "type": "clickable"
+  },
+  {
+    "text": "Bonny",
+    "className": "TextView",
+    "index": 12,
+    "bounds": "799,804,1058,1133",
+    "type": "clickable"
+  },
+  {
+    "text": "TikTok",
+    "className": "TextView",
+    "index": 13,
+    "bounds": "22,1133,281,1462",
+    "type": "clickable"
+  },
+  {
+    "text": "Wikipedia",
+    "className": "TextView",
+    "index": 14,
+    "bounds": "540,1133,799,1462",
+    "type": "clickable"
+  },
+  {
+    "text": "Uber Eats",
+    "className": "TextView",
+    "index": 15,
+    "bounds": "799,1133,1058,1462",
+    "type": "clickable"
+  },
+  {
+    "text": "Folder: Google, 4 or more items",
+    "className": "FrameLayout",
+    "index": 16,
+    "bounds": "22,1462,281,1791",
+    "type": "clickable",
+    "children": [
+      {
+        "text": "Google",
+        "className": "TextView",
+        "index": 34,
+        "bounds": "43,1693,260,1791",
+        "type": "text"
+      }
+    ]
+  },
+  {
+    "text": "Ultimate",
+    "className": "TextView",
+    "index": 17,
+    "bounds": "281,1462,540,1791",
+    "type": "clickable"
+  },
+  {
+    "text": "Chrome",
+    "className": "TextView",
+    "index": 18,
+    "bounds": "540,1462,799,1791",
+    "type": "clickable"
+  },
+  {
+    "text": "dApp Store",
+    "className": "TextView",
+    "index": 19,
+    "bounds": "799,1462,1058,1791",
+    "type": "clickable"
+  },
+  {
+    "text": "Phone",
+    "className": "TextView",
+    "index": 20,
+    "bounds": "22,1877,281,2084",
+    "type": "clickable"
+  },
+  {
+    "text": "Messages",
+    "className": "TextView",
+    "index": 21,
+    "bounds": "281,1877,540,2084",
+    "type": "clickable"
+  },
+  {
+    "text": "Play Store",
+    "className": "TextView",
+    "index": 22,
+    "bounds": "540,1877,799,2084",
+    "type": "clickable"
+  },
+  {
+    "text": "Camera",
+    "className": "TextView",
+    "index": 23,
+    "bounds": "799,1877,1058,2084",
+    "type": "clickable"
+  },
+  {
+    "text": "Search",
+    "className": "AppWidgetHostView",
+    "index": 24,
+    "bounds": "59,2078,1020,2330",
+    "type": "focusable"
+  },
+  {
+    "text": "Google search",
+    "className": "ImageView",
+    "index": 25,
+    "bounds": "59,2140,1020,2266",
+    "type": "clickable"
+  },
+  {
+    "text": "Google app",
+    "className": "ImageButton",
+    "index": 26,
+    "bounds": "59,2140,185,2266",
+    "type": "clickable",
+    "children": [
+      {
+        "text": "FrameLayout",
+        "className": "FrameLayout",
+        "index": 35,
+        "bounds": "59,2140,185,2266",
+        "type": "text"
+      }
+    ]
+  },
+  {
+    "text": "Voice search",
+    "className": "ImageButton",
+    "index": 27,
+    "bounds": "757,2140,883,2266",
+    "type": "clickable"
+  },
+  {
+    "text": "Camera search",
+    "className": "ImageButton",
+    "index": 28,
+    "bounds": "883,2140,1009,2266",
+    "type": "clickable"
+  },
+  {
+    "text": "googleapp_search_widget_ghost_google_logo",
+    "className": "FrameLayout",
+    "index": 29,
+    "bounds": "80,2130,206,2277",
+    "type": "clickable"
+  },
+  {
+    "text": "googleapp_search_widget_ghost_text_search",
+    "className": "FrameLayout",
+    "index": 30,
+    "bounds": "206,2130,736,2277",
+    "type": "clickable"
+  },
+  {
+    "text": "googleapp_search_widget_ghost_voice_search",
+    "className": "FrameLayout",
+    "index": 31,
+    "bounds": "736,2130,862,2277",
+    "type": "clickable"
+  },
+  {
+    "text": "googleapp_search_widget_ghost_lens",
+    "className": "FrameLayout",
+    "index": 32,
+    "bounds": "862,2130,999,2277",
+    "type": "clickable"
+  }
+]
