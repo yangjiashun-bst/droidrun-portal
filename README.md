@@ -1,4 +1,13 @@
-# 🤖 Droidrun Portal
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./static/droidrun-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="./static/droidrun.png">
+  <img src="./static/droidrun.png"  width="full">
+</picture>
+
+[![GitHub stars](https://img.shields.io/github/stars/droidrun/droidrun-portal?style=social)](https://github.com/droidrun/droidrun-portal/stargazers)
+[![Discord](https://img.shields.io/discord/1360219330318696488?color=7289DA&label=Discord&logo=discord&logoColor=white)](https://discord.gg/ZZbKEZZkwK)
+[![Documentation](https://img.shields.io/badge/Documentation-📕-blue)](https://docs.droidrun.ai)
+[![Twitter Follow](https://img.shields.io/twitter/follow/droid_run?style=social)](https://x.com/droid_run)
 
 ## 👁️ Overview
 Droidrun Portal is an Android accessibility service that provides real-time visual feedback and data collection for UI elements on the screen. It creates an interactive overlay that highlights clickable, checkable, editable, scrollable, and focusable elements, making it an invaluable tool for UI testing, automation development, and accessibility assessment.
