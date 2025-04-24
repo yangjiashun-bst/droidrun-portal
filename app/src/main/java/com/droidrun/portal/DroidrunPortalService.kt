@@ -31,7 +31,7 @@ class DroidrunPortalService : AccessibilityService() {
         private const val MIN_FRAME_TIME_MS = 16L // Minimum time between frames (roughly 60 FPS)
         
         // Time-based fade settings
-        private const val FADE_DURATION_MS = 60000L // Time to fade from weight 1.0 to 0.0 (60 seconds)
+        private const val FADE_DURATION_MS = 300000L // Time to fade from weight 1.0 to 0.0 (300 seconds = 5 minutes)
         private const val VISUALIZATION_REFRESH_MS = 250L // How often to refresh visualization (250ms = 4 times per second)
         private const val MIN_DISPLAY_WEIGHT = 0.05f // Minimum weight to display elements
         private const val SAME_TIME_THRESHOLD_MS = 500L // Elements appearing within this time window are considered "same time"
@@ -771,7 +771,8 @@ class DroidrunPortalService : AccessibilityService() {
                         // Find all elements that could be children of this container
                         val possibleChildren = visibleElements.filter { element ->
                             element != container &&  // Not the container itself
-                            isWithinBounds(element.rect, container.rect) // Within container bounds
+                            isWithinBounds(element.rect, container.rect) && // Within container bounds
+                            !processedAsChild.contains(element.id) // Not already processed as a child
                         }
                         
                         // Only consider direct children (not contained in other children)
@@ -846,20 +847,71 @@ class DroidrunPortalService : AccessibilityService() {
                     // Helper function to recursively build the element tree with children
                     fun buildElementJson(element: ElementNode): JSONObject {
                         return JSONObject().apply {
+                            // Find all text from this element and its children
+                            val allText = mutableListOf<String>()
+                            
+                            // First add this element's own text if meaningful
+                            if (element.text.isNotEmpty() && 
+                                !element.text.startsWith("android:") && 
+                                !element.text.contains("_") && 
+                                element.text.length > 1 &&
+                                !element.text.equals("LinearLayout", ignoreCase = true) &&
+                                !element.text.equals("FrameLayout", ignoreCase = true)) {
+                                allText.add(element.text)
+                            }
+
+                            // Add resource ID if available
+                            val resourceId = element.nodeInfo.viewIdResourceName
+                            if (resourceId != null && resourceId.isNotEmpty()) {
+                                val shortId = resourceId.substringAfterLast('/')
+                                if (!shortId.startsWith("android:") && shortId.isNotEmpty()) {
+                                    allText.add(shortId)
+                                }
+                            }
+                            
+                            // Then find all text elements within this element's bounds that are not in child elements
+                            val nestedTexts = visibleElements.filter { child ->
+                                child != element && // Not the element itself
+                                isWithinBounds(child.rect, element.rect) && // Within element bounds
+                                child.text.isNotEmpty() && // Has text
+                                !child.text.startsWith("android:") && // Not a resource ID
+                                !child.text.contains("_") && // Not an internal ID
+                                child.text.length > 1 && // Not a single character
+                                !child.text.equals("LinearLayout", ignoreCase = true) &&
+                                !child.text.equals("FrameLayout", ignoreCase = true) &&
+                                // Check if this text is not in any of our children
+                                !(childrenMap[element.id]?.any { grandchild ->
+                                    isWithinBounds(child.rect, grandchild.rect)
+                                } ?: false)
+                            }.sortedBy { it.rect.width() * it.rect.height() } // Sort by size, smallest first
+                            .map { it.text }
+                            .distinct() // Remove any duplicate texts
+                            
+                            allText.addAll(nestedTexts)
+                            
                             // Basic properties
-                            put("text", sanitizeText(element.text ?: ""))
+                            put("text", when {
+                                allText.isNotEmpty() -> sanitizeText(allText.distinct().joinToString(" "))
+                                else -> ""
+                            })
                             put("className", sanitizeText(element.className))
                             put("index", element.clickableIndex)
                             put("bounds", "${element.rect.left},${element.rect.top},${element.rect.right},${element.rect.bottom}")
                             
-                            // Add interactive type
+                            // Add resource ID as a separate field
+                            put("resourceId", when {
+                                resourceId != null && resourceId.isNotEmpty() -> resourceId
+                                else -> ""
+                            })
+                            
                             put("type", when {
                                 element.nodeInfo.isClickable -> "clickable"
                                 element.nodeInfo.isCheckable -> "checkable"
                                 element.nodeInfo.isEditable -> "input"
                                 element.nodeInfo.isScrollable -> "scrollable"
                                 element.nodeInfo.isFocusable -> "focusable"
-                                else -> "text"
+                                element.text.isNotEmpty() -> "text"
+                                else -> "view"
                             })
                             
                             // Add children if this element has any
@@ -1088,13 +1140,63 @@ class DroidrunPortalService : AccessibilityService() {
                     // Helper function to recursively build the element tree with children
                     fun buildElementJson(element: ElementNode): JSONObject {
                         return JSONObject().apply {
+                            // Find all text from this element and its children
+                            val allText = mutableListOf<String>()
+                            
+                            // First add this element's own text if meaningful
+                            if (element.text.isNotEmpty() && 
+                                !element.text.startsWith("android:") && 
+                                !element.text.contains("_") && 
+                                element.text.length > 1 &&
+                                !element.text.equals("LinearLayout", ignoreCase = true) &&
+                                !element.text.equals("FrameLayout", ignoreCase = true)) {
+                                allText.add(element.text)
+                            }
+
+                            // Add resource ID if available
+                            val resourceId = element.nodeInfo.viewIdResourceName
+                            if (resourceId != null && resourceId.isNotEmpty()) {
+                                val shortId = resourceId.substringAfterLast('/')
+                                if (!shortId.startsWith("android:") && shortId.isNotEmpty()) {
+                                    allText.add(shortId)
+                                }
+                            }
+                            
+                            // Then find all text elements within this element's bounds that are not in child elements
+                            val nestedTexts = visibleElements.filter { child ->
+                                child != element && // Not the element itself
+                                isWithinBounds(child.rect, element.rect) && // Within element bounds
+                                child.text.isNotEmpty() && // Has text
+                                !child.text.startsWith("android:") && // Not a resource ID
+                                !child.text.contains("_") && // Not an internal ID
+                                child.text.length > 1 && // Not a single character
+                                !child.text.equals("LinearLayout", ignoreCase = true) &&
+                                !child.text.equals("FrameLayout", ignoreCase = true) &&
+                                // Check if this text is not in any of our children
+                                !(childrenMap[element.id]?.any { grandchild ->
+                                    isWithinBounds(child.rect, grandchild.rect)
+                                } ?: false)
+                            }.sortedBy { it.rect.width() * it.rect.height() } // Sort by size, smallest first
+                            .map { it.text }
+                            .distinct() // Remove any duplicate texts
+                            
+                            allText.addAll(nestedTexts)
+                            
                             // Basic properties
-                            put("text", sanitizeText(element.text))
+                            put("text", when {
+                                allText.isNotEmpty() -> sanitizeText(allText.distinct().joinToString(" "))
+                                else -> ""
+                            })
                             put("className", sanitizeText(element.className))
                             put("index", element.clickableIndex)
                             put("bounds", "${element.rect.left},${element.rect.top},${element.rect.right},${element.rect.bottom}")
                             
-                            // Element type
+                            // Add resource ID as a separate field
+                            put("resourceId", when {
+                                resourceId != null && resourceId.isNotEmpty() -> resourceId
+                                else -> ""
+                            })
+                            
                             put("type", when {
                                 element.nodeInfo.isClickable -> "clickable"
                                 element.nodeInfo.isCheckable -> "checkable"
@@ -1172,5 +1274,28 @@ class DroidrunPortalService : AccessibilityService() {
     // Helper method to check if overlayManager is available
     private fun isOverlayManagerAvailable(): Boolean {
         return this::overlayManager.isInitialized && isInitialized
+    }
+
+    // Helper function to find meaningful text in children
+    private fun findMeaningfulTextInChildren(element: ElementNode): String {
+        val meaningfulText = mutableListOf<String>()
+        
+        // Find all elements that are contained within this element's bounds
+        val childElements = visibleElements.filter { child ->
+            child != element && // Not the element itself
+            isWithinBounds(child.rect, element.rect) // Within element bounds
+        }
+        
+        // Process each child for meaningful text
+        for (child in childElements) {
+            if (child.text.isNotEmpty() && 
+                !child.text.startsWith("android:") && 
+                !child.text.contains("_") && // Skip IDs and resource names
+                child.text.length > 1) {  // Skip single characters
+                meaningfulText.add(child.text)
+            }
+        }
+        
+        return meaningfulText.joinToString(" ")
     }
 } 
