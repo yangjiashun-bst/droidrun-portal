@@ -48,6 +48,8 @@ class DroidrunPortalService : AccessibilityService() {
         const val ACTION_GET_ALL_ELEMENTS = "com.droidrun.portal.GET_ALL_ELEMENTS"
         const val ACTION_GET_INTERACTIVE_ELEMENTS = "com.droidrun.portal.GET_INTERACTIVE_ELEMENTS"
         const val ACTION_FORCE_HIDE_OVERLAY = "com.droidrun.portal.FORCE_HIDE_OVERLAY"
+        const val ACTION_UPDATE_OVERLAY_OFFSET = "com.droidrun.portal.UPDATE_OVERLAY_OFFSET"
+        const val EXTRA_OVERLAY_OFFSET = "overlay_offset"
         const val EXTRA_ELEMENTS_DATA = "elements_data"
         const val EXTRA_ALL_ELEMENTS_DATA = "all_elements_data"
         const val EXTRA_OVERLAY_VISIBLE = "overlay_visible"
@@ -105,6 +107,24 @@ class DroidrunPortalService : AccessibilityService() {
                     }
                     sendBroadcast(responseIntent)
                 }
+                ACTION_UPDATE_OVERLAY_OFFSET -> {
+                    if (!isOverlayManagerAvailable()) {
+                        Log.e("DROIDRUN_RECEIVER", "Cannot update offset: OverlayManager not initialized")
+                        return
+                    }
+                    
+                    val offsetValue = intent.getIntExtra(EXTRA_OVERLAY_OFFSET, -128)
+                    Log.e("DROIDRUN_RECEIVER", "Received UPDATE_OVERLAY_OFFSET command: $offsetValue")
+                    
+                    // Update the OverlayManager with the new offset
+                    overlayManager.setPositionOffsetY(offsetValue)
+                    
+                    // Send confirmation with current offset
+                    val responseIntent = Intent(ACTION_ELEMENTS_RESPONSE).apply {
+                        putExtra("current_offset", offsetValue)
+                    }
+                    sendBroadcast(responseIntent)
+                }
                 ACTION_RETRIGGER_ELEMENTS -> {
                     Log.e("DROIDRUN_RECEIVER", "Received RETRIGGER_ELEMENTS command")
                     retriggerElements()
@@ -143,6 +163,7 @@ class DroidrunPortalService : AccessibilityService() {
                 addAction(ACTION_TOGGLE_OVERLAY)
                 addAction(ACTION_RETRIGGER_ELEMENTS)
                 addAction(ACTION_FORCE_HIDE_OVERLAY)
+                addAction(ACTION_UPDATE_OVERLAY_OFFSET)
             }
             registerReceiver(broadcastReceiver, intentFilter, RECEIVER_EXPORTED)
             Log.e("DROIDRUN_RECEIVER", "Registered receiver for commands with EXPORTED flag")

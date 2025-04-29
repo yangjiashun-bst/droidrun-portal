@@ -26,10 +26,11 @@ class OverlayManager(private val context: Context) {
     private var elementIndexCounter = 0 // Counter to assign indexes to elements
     private val isOverlayReady = AtomicBoolean(false)
     private var onReadyCallback: (() -> Unit)? = null
+    
+    private var positionOffsetY = -128 // Default offset value
 
     companion object {
         private const val TAG = "TOPVIEW_OVERLAY"
-        private const val POSITION_OFFSET_Y = -128 // Shift rectangles up by a smaller amount
         private const val OVERLAP_THRESHOLD = 0.5f // Lower overlap threshold for matching
         
         // Define a color scheme with 8 visually distinct colors
@@ -53,6 +54,36 @@ class OverlayManager(private val context: Context) {
         val color: Int = Color.GREEN, // Add color field with default value
         val index: Int = 0 // Index number for identifying the element
     )
+    
+    // Add method to adjust the vertical offset
+    fun setPositionOffsetY(offsetY: Int) {
+        this.positionOffsetY = offsetY
+        // Redraw existing elements with the new offset
+        val existingElements = ArrayList(elementRects)
+        elementRects.clear()
+        
+        // Re-add elements with the updated offset
+        for (element in existingElements) {
+            val originalRect = Rect(element.rect)
+            // Adjust back to original position by removing the old offset
+            originalRect.offset(0, -positionOffsetY)
+            // Add again with new offset
+            addElement(
+                rect = originalRect,
+                type = element.type,
+                text = element.text,
+                depth = element.depth,
+                color = element.color
+            )
+        }
+        
+        refreshOverlay()
+    }
+    
+    // Add getter for the current offset value
+    fun getPositionOffsetY(): Int {
+        return positionOffsetY
+    }
 
     fun setOnReadyCallback(callback: () -> Unit) {
         onReadyCallback = callback
@@ -175,8 +206,8 @@ class OverlayManager(private val context: Context) {
     private fun correctRectPosition(rect: Rect): Rect {
         val correctedRect = Rect(rect)
         
-        // Apply a vertical offset to shift the rectangle upward
-        correctedRect.offset(0, POSITION_OFFSET_Y)
+        // Apply the vertical offset to shift the rectangle upward
+        correctedRect.offset(0, positionOffsetY)
         
         return correctedRect
     }
