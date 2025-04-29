@@ -26,11 +26,24 @@ class OverlayManager(private val context: Context) {
     private var elementIndexCounter = 0 // Counter to assign indexes to elements
     private val isOverlayReady = AtomicBoolean(false)
     private var onReadyCallback: (() -> Unit)? = null
+    
+    private var positionOffsetY = -128 // Default offset value
 
     companion object {
         private const val TAG = "TOPVIEW_OVERLAY"
-        private const val POSITION_OFFSET_Y = -128 // Shift rectangles up by a smaller amount
         private const val OVERLAP_THRESHOLD = 0.5f // Lower overlap threshold for matching
+        
+        // Define a color scheme with 8 visually distinct colors
+        private val COLOR_SCHEME = arrayOf(
+            Color.rgb(0, 122, 255),    // Blue
+            Color.rgb(255, 45, 85),    // Red
+            Color.rgb(52, 199, 89),    // Green
+            Color.rgb(255, 149, 0),    // Orange
+            Color.rgb(175, 82, 222),   // Purple
+            Color.rgb(255, 204, 0),    // Yellow
+            Color.rgb(90, 200, 250),   // Light Blue
+            Color.rgb(88, 86, 214)     // Indigo
+        )
     }
 
     data class ElementInfo(
@@ -41,6 +54,36 @@ class OverlayManager(private val context: Context) {
         val color: Int = Color.GREEN, // Add color field with default value
         val index: Int = 0 // Index number for identifying the element
     )
+    
+    // Add method to adjust the vertical offset
+    fun setPositionOffsetY(offsetY: Int) {
+        this.positionOffsetY = offsetY
+        // Redraw existing elements with the new offset
+        val existingElements = ArrayList(elementRects)
+        elementRects.clear()
+        
+        // Re-add elements with the updated offset
+        for (element in existingElements) {
+            val originalRect = Rect(element.rect)
+            // Adjust back to original position by removing the old offset
+            originalRect.offset(0, -positionOffsetY)
+            // Add again with new offset
+            addElement(
+                rect = originalRect,
+                type = element.type,
+                text = element.text,
+                depth = element.depth,
+                color = element.color
+            )
+        }
+        
+        refreshOverlay()
+    }
+    
+    // Add getter for the current offset value
+    fun getPositionOffsetY(): Int {
+        return positionOffsetY
+    }
 
     fun setOnReadyCallback(callback: () -> Unit) {
         onReadyCallback = callback
@@ -153,7 +196,9 @@ class OverlayManager(private val context: Context) {
         // Apply position correction to the rectangle
         val correctedRect = correctRectPosition(rect)
         val index = elementIndexCounter++
-        elementRects.add(ElementInfo(correctedRect, type, text, depth, color, index))
+        // Assign a color from the color scheme based on the index
+        val colorFromScheme = COLOR_SCHEME[index % COLOR_SCHEME.size]
+        elementRects.add(ElementInfo(correctedRect, type, text, depth, colorFromScheme, index))
         // Don't refresh on each add to avoid excessive redraws with many elements
     }
     
@@ -161,8 +206,8 @@ class OverlayManager(private val context: Context) {
     private fun correctRectPosition(rect: Rect): Rect {
         val correctedRect = Rect(rect)
         
-        // Apply a vertical offset to shift the rectangle upward
-        correctedRect.offset(0, POSITION_OFFSET_Y)
+        // Apply the vertical offset to shift the rectangle upward
+        correctedRect.offset(0, positionOffsetY)
         
         return correctedRect
     }
@@ -207,24 +252,27 @@ class OverlayManager(private val context: Context) {
             val index = existingElement.index
             val elementIndex = elementRects.indexOf(existingElement)
             if (elementIndex >= 0) {
+                // Use the existing color to maintain color consistency for the same element
                 elementRects[elementIndex] = ElementInfo(
                     rect = correctedRect,
                     type = existingElement.type,
                     text = text,
                     depth = existingElement.depth,
-                    color = color,
+                    color = existingElement.color,
                     index = index
                 )
             }
         } else {
             // If element doesn't exist, add it as a new element
             val index = elementIndexCounter++
+            // Assign a color from the color scheme based on the index
+            val colorFromScheme = COLOR_SCHEME[index % COLOR_SCHEME.size]
             elementRects.add(ElementInfo(
                 rect = correctedRect,
                 type = "UpdatedElement",
                 text = text,
                 depth = 0,
-                color = color,
+                color = colorFromScheme,
                 index = index
             ))
         }
@@ -279,7 +327,7 @@ class OverlayManager(private val context: Context) {
     inner class OverlayView(context: Context) : FrameLayout(context) {
         private val boxPaint = Paint().apply {
             style = Paint.Style.STROKE
-            strokeWidth = 8f
+            strokeWidth = 2f  // Thinner border as requested
             isAntiAlias = true
             // Enable hardware acceleration features
             flags = Paint.ANTI_ALIAS_FLAG or Paint.DITHER_FLAG
@@ -287,14 +335,14 @@ class OverlayManager(private val context: Context) {
         
         private val textPaint = Paint().apply {
             color = Color.WHITE
-            textSize = 28f
+            textSize = 32f  // Increased text size for better visibility
             isAntiAlias = true
             // Enable hardware acceleration features
             flags = Paint.ANTI_ALIAS_FLAG or Paint.DITHER_FLAG
         }
         
         private val textBackgroundPaint = Paint().apply {
-            color = Color.argb(200, 0, 0, 0)
+            // Color will be set dynamically to match the border color
             style = Paint.Style.FILL
             // Enable hardware acceleration features
             flags = Paint.ANTI_ALIAS_FLAG or Paint.DITHER_FLAG
@@ -367,32 +415,41 @@ class OverlayManager(private val context: Context) {
                 
                 boxPaint.color = colorWithAlpha
                 
+                // Set the background color to match the border color with some transparency
+                textBackgroundPaint.color = Color.argb(
+                    200, // Semi-transparent
+                    Color.red(elementColor),
+                    Color.green(elementColor),
+                    Color.blue(elementColor)
+                )
+                
                 // Draw the rectangle with the specified color
                 canvas.drawRect(elementInfo.rect, boxPaint)
                 
-                // Draw the index number
+                // Draw the index number in the top-right corner
                 val displayText = "${elementInfo.index}"
                 val textWidth = textPaint.measureText(displayText)
-                val textHeight = 40f
+                val textHeight = 36f  // Larger text height to match increased text size
                 
-                val centerX = elementInfo.rect.centerX()
-                val centerY = elementInfo.rect.centerY()
+                // Position for top-right corner with small padding
+                val textX = elementInfo.rect.right - textWidth - 4f  // 4px padding from right edge
+                val textY = elementInfo.rect.top + textHeight  // Position text at top with some padding
                 
-                // Calculate background rectangle
-                val textBackgroundSize = textHeight * 1.2f
+                // Calculate background rectangle for the text
+                val backgroundPadding = 4f
                 val backgroundRect = Rect(
-                    (centerX - textBackgroundSize/2).toInt(),
-                    (centerY - textBackgroundSize/2).toInt(),
-                    (centerX + textBackgroundSize/2).toInt(),
-                    (centerY + textBackgroundSize/2).toInt()
+                    (textX - backgroundPadding).toInt(),
+                    (textY - textHeight).toInt(),
+                    (textX + textWidth + backgroundPadding).toInt(),
+                    (textY + backgroundPadding).toInt()
                 )
                 
                 // Draw background and text
                 canvas.drawRect(backgroundRect, textBackgroundPaint)
                 canvas.drawText(
                     displayText,
-                    centerX - textWidth/2,
-                    centerY + textHeight/3,
+                    textX,
+                    textY - backgroundPadding,
                     textPaint
                 )
             } catch (e: Exception) {

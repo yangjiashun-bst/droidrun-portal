@@ -9,9 +9,15 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import android.content.BroadcastReceiver
 import android.content.IntentFilter
+import android.text.Editable
+import android.text.TextWatcher
+import android.view.inputmethod.EditorInfo
+import android.widget.SeekBar
 import android.widget.Toast
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.switchmaterial.SwitchMaterial
+import com.google.android.material.textfield.TextInputEditText
+import com.google.android.material.textfield.TextInputLayout
 
 class MainActivity : AppCompatActivity() {
     
@@ -20,6 +26,24 @@ class MainActivity : AppCompatActivity() {
     private lateinit var toggleOverlay: SwitchMaterial
     private lateinit var fetchButton: MaterialButton
     private lateinit var retriggerButton: MaterialButton
+    private lateinit var offsetSlider: SeekBar
+    private lateinit var offsetInput: TextInputEditText
+    private lateinit var offsetInputLayout: TextInputLayout
+    
+    // Flag to prevent infinite update loops
+    private var isProgrammaticUpdate = false
+    
+    // Constants for the position offset slider
+    companion object {
+        private const val DEFAULT_OFFSET = -128
+        private const val MIN_OFFSET = -256
+        private const val MAX_OFFSET = 256
+        private const val SLIDER_RANGE = MAX_OFFSET - MIN_OFFSET
+        
+        // Intent action for updating overlay offset
+        const val ACTION_UPDATE_OVERLAY_OFFSET = "com.droidrun.portal.UPDATE_OVERLAY_OFFSET"
+        const val EXTRA_OVERLAY_OFFSET = "overlay_offset"
+    }
     
     // Broadcast receiver to get element data response
     private val elementDataReceiver = object : BroadcastReceiver() {
@@ -50,6 +74,13 @@ class MainActivity : AppCompatActivity() {
                     val overlayVisible = intent.getBooleanExtra("overlay_status", true)
                     toggleOverlay.isChecked = overlayVisible
                 }
+                
+                // Handle position offset response
+                if (intent.hasExtra("current_offset")) {
+                    val currentOffset = intent.getIntExtra("current_offset", DEFAULT_OFFSET)
+                    updateOffsetSlider(currentOffset)
+                    updateOffsetInputField(currentOffset)
+                }
             }
         }
     }
@@ -64,6 +95,13 @@ class MainActivity : AppCompatActivity() {
         fetchButton = findViewById(R.id.fetch_button)
         retriggerButton = findViewById(R.id.retrigger_button)
         toggleOverlay = findViewById(R.id.toggle_overlay)
+        offsetSlider = findViewById(R.id.offset_slider)
+        offsetInput = findViewById(R.id.offset_input)
+        offsetInputLayout = findViewById(R.id.offset_input_layout)
+        
+        // Configure the offset slider and input
+        setupOffsetSlider()
+        setupOffsetInput()
         
         // Register for responses
         val filter = IntentFilter(DroidrunPortalService.ACTION_ELEMENTS_RESPONSE)
@@ -79,6 +117,155 @@ class MainActivity : AppCompatActivity() {
         
         toggleOverlay.setOnCheckedChangeListener { _, isChecked ->
             toggleOverlayVisibility(isChecked)
+        }
+    }
+    
+    private fun setupOffsetSlider() {
+        // Initialize the slider with the new range
+        offsetSlider.max = SLIDER_RANGE
+        
+        // Convert the default offset to slider position
+        val initialSliderPosition = DEFAULT_OFFSET - MIN_OFFSET
+        offsetSlider.progress = initialSliderPosition
+        
+        // Set listener for slider changes
+        offsetSlider.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                // Convert slider position back to actual offset value (range -256 to +256)
+                val offsetValue = progress + MIN_OFFSET
+                
+                // Update input field to match slider (only when user is sliding)
+                if (fromUser) {
+                    updateOffsetInputField(offsetValue)
+                    updateOverlayOffset(offsetValue)
+                }
+            }
+            
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                // Not needed
+            }
+            
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                // Final update when user stops sliding
+                val offsetValue = seekBar?.progress?.plus(MIN_OFFSET) ?: DEFAULT_OFFSET
+                updateOverlayOffset(offsetValue)
+            }
+        })
+    }
+    
+    private fun setupOffsetInput() {
+        // Set initial value
+        isProgrammaticUpdate = true
+        offsetInput.setText(DEFAULT_OFFSET.toString())
+        isProgrammaticUpdate = false
+        
+        // Apply on enter key
+        offsetInput.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_DONE) {
+                applyInputOffset()
+                true
+            } else {
+                false
+            }
+        }
+        
+        // Input validation and auto-apply
+        offsetInput.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            
+            override fun afterTextChanged(s: Editable?) {
+                // Skip processing if this is a programmatic update
+                if (isProgrammaticUpdate) return
+                
+                try {
+                    val value = s.toString().toIntOrNull()
+                    if (value != null) {
+                        if (value < MIN_OFFSET || value > MAX_OFFSET) {
+                            offsetInputLayout.error = "Value must be between $MIN_OFFSET and $MAX_OFFSET"
+                        } else {
+                            offsetInputLayout.error = null
+                            // Auto-apply if value is valid and complete
+                            if (s.toString().length > 1 || (s.toString().length == 1 && !s.toString().startsWith("-"))) {
+                                applyInputOffset()
+                            }
+                        }
+                    } else if (s.toString().isNotEmpty() && s.toString() != "-") {
+                        offsetInputLayout.error = "Invalid number"
+                    } else {
+                        offsetInputLayout.error = null
+                    }
+                } catch (e: Exception) {
+                    offsetInputLayout.error = "Invalid number"
+                }
+            }
+        })
+    }
+    
+    private fun applyInputOffset() {
+        try {
+            val inputText = offsetInput.text.toString()
+            val offsetValue = inputText.toIntOrNull()
+            
+            if (offsetValue != null) {
+                // Ensure the value is within bounds
+                val boundedValue = offsetValue.coerceIn(MIN_OFFSET, MAX_OFFSET)
+                
+                if (boundedValue != offsetValue) {
+                    // Update input if we had to bound the value
+                    isProgrammaticUpdate = true
+                    offsetInput.setText(boundedValue.toString())
+                    isProgrammaticUpdate = false
+                    Toast.makeText(this, "Value adjusted to valid range", Toast.LENGTH_SHORT).show()
+                }
+                
+                // Update slider to match and apply the offset
+                val sliderPosition = boundedValue - MIN_OFFSET
+                offsetSlider.progress = sliderPosition
+                updateOverlayOffset(boundedValue)
+            } else {
+                // Invalid input
+                Toast.makeText(this, "Please enter a valid number", Toast.LENGTH_SHORT).show()
+            }
+        } catch (e: Exception) {
+            Log.e("DROIDRUN_MAIN", "Error applying input offset: ${e.message}")
+            Toast.makeText(this, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+    
+    private fun updateOffsetSlider(currentOffset: Int) {
+        // Ensure the offset is within our new bounds
+        val boundedOffset = currentOffset.coerceIn(MIN_OFFSET, MAX_OFFSET)
+        
+        // Update the slider to match the current offset from the service
+        val sliderPosition = boundedOffset - MIN_OFFSET
+        offsetSlider.progress = sliderPosition
+    }
+    
+    private fun updateOffsetInputField(currentOffset: Int) {
+        // Set flag to prevent TextWatcher from triggering
+        isProgrammaticUpdate = true
+        
+        // Update the text input to match the current offset
+        offsetInput.setText(currentOffset.toString())
+        
+        // Reset flag
+        isProgrammaticUpdate = false
+    }
+    
+    private fun updateOverlayOffset(offsetValue: Int) {
+        try {
+            val intent = Intent(ACTION_UPDATE_OVERLAY_OFFSET).apply {
+                putExtra(EXTRA_OVERLAY_OFFSET, offsetValue)
+            }
+            sendBroadcast(intent)
+            
+            statusText.text = "Updating element offset to: $offsetValue"
+            Log.e("DROIDRUN_MAIN", "Sent offset update: $offsetValue")
+        } catch (e: Exception) {
+            statusText.text = "Error updating offset: ${e.message}"
+            Log.e("DROIDRUN_MAIN", "Error sending offset update: ${e.message}")
         }
     }
     

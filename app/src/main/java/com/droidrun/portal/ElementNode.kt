@@ -20,7 +20,8 @@ data class ElementNode(
     val children: MutableList<ElementNode> = mutableListOf(),
     var clickableIndex: Int = -1,
     var nestingLevel: Int = 0,
-    var semanticParentId: String? = null
+    var semanticParentId: String? = null,
+    var overlayIndex: Int = -1 // Store the exact index shown in the overlay
 ) {
     companion object {
         private const val FADE_DURATION_MS = 60000L // Time to fade from weight 1.0 to 0.0 (60 seconds)
