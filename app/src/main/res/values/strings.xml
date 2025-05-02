@@ -1,4 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Droidrun Portal</string>
-    <string name="accessibility_service_description">Droidrun Portal identifies and visualizes UI elements on screen. This service helps to detect which elements are visible to the user by examining the layers of the UI, which is useful for UI analysis and automation.</string>
+    <string name="app_name">Droidrun</string>
+    <string name="accessibility_service_description">Droidrun Portal Service for UI visualization and interaction</string>
 </resources>

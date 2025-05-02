@@ -21,6 +21,7 @@ class OverlayManager(private val context: Context) {
     private var overlayView: OverlayView? = null
     private val handler = Handler(Looper.getMainLooper())
     private val elementRects = mutableListOf<ElementInfo>()
+    private val customShapes = mutableListOf<CustomShape>() // New list for custom shapes
     private var isOverlayVisible = false
     private var positionCorrectionOffset = 0 // Default correction offset
     private var elementIndexCounter = 0 // Counter to assign indexes to elements
@@ -32,6 +33,7 @@ class OverlayManager(private val context: Context) {
     companion object {
         private const val TAG = "TOPVIEW_OVERLAY"
         private const val OVERLAP_THRESHOLD = 0.5f // Lower overlap threshold for matching
+        private const val DOT_RADIUS = 10f // Default radius for dots
         
         // Define a color scheme with 8 visually distinct colors
         private val COLOR_SCHEME = arrayOf(
@@ -324,12 +326,49 @@ class OverlayManager(private val context: Context) {
         return similarElement?.index ?: -1
     }
 
+    // New sealed class for custom shapes
+    sealed class CustomShape {
+        data class Dot(val x: Float, val y: Float, val color: Int = Color.RED, val radius: Float = DOT_RADIUS) : CustomShape()
+        data class Line(val startX: Float, val startY: Float, val endX: Float, val endY: Float, val color: Int = Color.RED) : CustomShape()
+    }
+
+    // Function to add a dot
+    fun addDot(x: Float, y: Float, color: Int = Color.RED, radius: Float = DOT_RADIUS) {
+        customShapes.add(CustomShape.Dot(x, y, color, radius))
+        refreshOverlay()
+    }
+
+    // Function to add a line
+    fun addLine(startX: Float, startY: Float, endX: Float, endY: Float, color: Int = Color.RED) {
+        customShapes.add(CustomShape.Line(startX, startY, endX, endY, color))
+        refreshOverlay()
+    }
+
+    // Function to clear all custom shapes
+    fun clearCustomShapes() {
+        customShapes.clear()
+        refreshOverlay()
+    }
+
+    // Function to clear everything (both UI elements and custom shapes)
+    fun clearAll() {
+        elementRects.clear()
+        customShapes.clear()
+        elementIndexCounter = 0
+        refreshOverlay()
+    }
+
     inner class OverlayView(context: Context) : FrameLayout(context) {
         private val boxPaint = Paint().apply {
             style = Paint.Style.STROKE
             strokeWidth = 2f  // Thinner border as requested
             isAntiAlias = true
             // Enable hardware acceleration features
+            flags = Paint.ANTI_ALIAS_FLAG or Paint.DITHER_FLAG
+        }
+        
+        private val shapePaint = Paint().apply {
+            isAntiAlias = true
             flags = Paint.ANTI_ALIAS_FLAG or Paint.DITHER_FLAG
         }
         
@@ -371,7 +410,7 @@ class OverlayManager(private val context: Context) {
                 
                 val startTime = System.currentTimeMillis()
 
-                if (elementRects.isEmpty()) {
+                if (elementRects.isEmpty() && customShapes.isEmpty()) {
                     if (isDebugging()) {
                         drawDebugRect(canvas)
                     }
@@ -380,12 +419,34 @@ class OverlayManager(private val context: Context) {
                 
                 // Create a local copy to prevent concurrent modification
                 val elementsToDraw = ArrayList(elementRects)
+                val shapesToDraw = ArrayList(customShapes)
                 
                 // Sort elements by depth for drawing order
                 val sortedElements = elementsToDraw.sortedBy { it.depth }
                 
                 for (elementInfo in sortedElements) {
                     drawElement(canvas, elementInfo)
+                }
+
+                // Draw custom shapes
+                for (shape in shapesToDraw) {
+                    when (shape) {
+                        is CustomShape.Dot -> {
+                            shapePaint.apply {
+                                style = Paint.Style.FILL
+                                color = shape.color
+                            }
+                            canvas.drawCircle(shape.x, shape.y, shape.radius, shapePaint)
+                        }
+                        is CustomShape.Line -> {
+                            shapePaint.apply {
+                                style = Paint.Style.STROKE
+                                strokeWidth = 4f
+                                color = shape.color
+                            }
+                            canvas.drawLine(shape.startX, shape.startY, shape.endX, shape.endY, shapePaint)
+                        }
+                    }
                 }
 
                 val drawTime = System.currentTimeMillis() - startTime

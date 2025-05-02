@@ -18,6 +18,7 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.switchmaterial.SwitchMaterial
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
+import android.graphics.Color
 
 class MainActivity : AppCompatActivity() {
     
@@ -43,43 +44,96 @@ class MainActivity : AppCompatActivity() {
         // Intent action for updating overlay offset
         const val ACTION_UPDATE_OVERLAY_OFFSET = "com.droidrun.portal.UPDATE_OVERLAY_OFFSET"
         const val EXTRA_OVERLAY_OFFSET = "overlay_offset"
+        
+        // Intent action for toggling overlay via ADB
+        const val ACTION_TOGGLE_OVERLAY_ADB = "com.droidrun.portal.TOGGLE_OVERLAY_ADB"
+        const val EXTRA_OVERLAY_VISIBLE_ADB = "overlay_visible_adb"
+
+        // New drawing commands
+        const val ACTION_DRAW_DOT = "com.droidrun.portal.DRAW_DOT"
+        const val ACTION_DRAW_LINE = "com.droidrun.portal.DRAW_LINE"
+        const val ACTION_CLEAR_DRAWINGS = "com.droidrun.portal.CLEAR_DRAWINGS"
+        const val ACTION_CLEAR_ALL = "com.droidrun.portal.CLEAR_ALL"
+
+        // Drawing extras
+        const val EXTRA_X = "x"
+        const val EXTRA_Y = "y"
+        const val EXTRA_START_X = "start_x"
+        const val EXTRA_START_Y = "start_y"
+        const val EXTRA_END_X = "end_x"
+        const val EXTRA_END_Y = "end_y"
+        const val EXTRA_COLOR = "color"
+        const val EXTRA_RADIUS = "radius"
     }
     
     // Broadcast receiver to get element data response
     private val elementDataReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             Log.e("DROIDRUN_MAIN", "Received broadcast: ${intent.action}")
-            if (intent.action == DroidrunPortalService.ACTION_ELEMENTS_RESPONSE) {
-                // Handle element data response
-                val data = intent.getStringExtra(DroidrunPortalService.EXTRA_ELEMENTS_DATA)
-                if (data != null) {
-                    Log.e("DROIDRUN_MAIN", "Received element data: ${data.substring(0, Math.min(100, data.length))}...")
+            
+            when (intent.action) {
+                DroidrunPortalService.ACTION_ELEMENTS_RESPONSE -> {
+                    // Handle element data response
+                    val data = intent.getStringExtra(DroidrunPortalService.EXTRA_ELEMENTS_DATA)
+                    if (data != null) {
+                        Log.e("DROIDRUN_MAIN", "Received element data: ${data.substring(0, Math.min(100, data.length))}...")
+                        
+                        // Update UI with the data
+                        statusText.text = "Received data: ${data.length} characters"
+                        responseText.text = data // Display the full JSON string
+                        Toast.makeText(context, "Data received successfully!", Toast.LENGTH_SHORT).show()
+                    }
                     
-                    // Update UI with the data
-                    statusText.text = "Received data: ${data.length} characters"
-                    responseText.text = data // Display the full JSON string
-                    Toast.makeText(context, "Data received successfully!", Toast.LENGTH_SHORT).show()
+                    // Handle retrigger response
+                    val retriggerStatus = intent.getStringExtra("retrigger_status")
+                    if (retriggerStatus != null) {
+                        val count = intent.getIntExtra("elements_count", 0)
+                        statusText.text = "Elements refreshed: $count UI elements restored"
+                        Toast.makeText(context, "Refresh successful: $count elements", Toast.LENGTH_SHORT).show()
+                    }
+                    
+                    // Handle overlay toggle status
+                    if (intent.hasExtra("overlay_status")) {
+                        val overlayVisible = intent.getBooleanExtra("overlay_status", true)
+                        toggleOverlay.isChecked = overlayVisible
+                    }
+                    
+                    // Handle position offset response
+                    if (intent.hasExtra("current_offset")) {
+                        val currentOffset = intent.getIntExtra("current_offset", DEFAULT_OFFSET)
+                        updateOffsetSlider(currentOffset)
+                        updateOffsetInputField(currentOffset)
+                    }
                 }
-                
-                // Handle retrigger response
-                val retriggerStatus = intent.getStringExtra("retrigger_status")
-                if (retriggerStatus != null) {
-                    val count = intent.getIntExtra("elements_count", 0)
-                    statusText.text = "Elements refreshed: $count UI elements restored"
-                    Toast.makeText(context, "Refresh successful: $count elements", Toast.LENGTH_SHORT).show()
+                ACTION_TOGGLE_OVERLAY_ADB -> {
+                    // Handle toggle overlay via ADB
+                    val visible = intent.getBooleanExtra(EXTRA_OVERLAY_VISIBLE_ADB, false)
+                    toggleOverlayVisibility(visible)
                 }
-                
-                // Handle overlay toggle status
-                if (intent.hasExtra("overlay_status")) {
-                    val overlayVisible = intent.getBooleanExtra("overlay_status", true)
-                    toggleOverlay.isChecked = overlayVisible
+                ACTION_DRAW_DOT -> {
+                    val x = intent.getFloatExtra(EXTRA_X, 0f)
+                    val y = intent.getFloatExtra(EXTRA_Y, 0f)
+                    val color = intent.getIntExtra(EXTRA_COLOR, Color.RED)
+                    val radius = intent.getFloatExtra(EXTRA_RADIUS, 10f)
+                    DroidrunPortalService.overlayManager?.addDot(x, y, color, radius)
+                    Log.e("DROIDRUN_MAIN", "Drawing dot at ($x, $y)")
                 }
-                
-                // Handle position offset response
-                if (intent.hasExtra("current_offset")) {
-                    val currentOffset = intent.getIntExtra("current_offset", DEFAULT_OFFSET)
-                    updateOffsetSlider(currentOffset)
-                    updateOffsetInputField(currentOffset)
+                ACTION_DRAW_LINE -> {
+                    val startX = intent.getFloatExtra(EXTRA_START_X, 0f)
+                    val startY = intent.getFloatExtra(EXTRA_START_Y, 0f)
+                    val endX = intent.getFloatExtra(EXTRA_END_X, 0f)
+                    val endY = intent.getFloatExtra(EXTRA_END_Y, 0f)
+                    val color = intent.getIntExtra(EXTRA_COLOR, Color.RED)
+                    DroidrunPortalService.overlayManager?.addLine(startX, startY, endX, endY, color)
+                    Log.e("DROIDRUN_MAIN", "Drawing line from ($startX, $startY) to ($endX, $endY)")
+                }
+                ACTION_CLEAR_DRAWINGS -> {
+                    DroidrunPortalService.overlayManager?.clearCustomShapes()
+                    Log.e("DROIDRUN_MAIN", "Cleared all custom shapes")
+                }
+                ACTION_CLEAR_ALL -> {
+                    DroidrunPortalService.overlayManager?.clearAll()
+                    Log.e("DROIDRUN_MAIN", "Cleared all drawings and UI elements")
                 }
             }
         }
@@ -103,9 +157,16 @@ class MainActivity : AppCompatActivity() {
         setupOffsetSlider()
         setupOffsetInput()
         
-        // Register for responses
-        val filter = IntentFilter(DroidrunPortalService.ACTION_ELEMENTS_RESPONSE)
-        registerReceiver(elementDataReceiver, filter, RECEIVER_EXPORTED)
+        // Register for responses with additional filter for drawing commands
+        val filter = IntentFilter().apply {
+            addAction(DroidrunPortalService.ACTION_ELEMENTS_RESPONSE)
+            addAction(ACTION_TOGGLE_OVERLAY_ADB)
+            addAction(ACTION_DRAW_DOT)
+            addAction(ACTION_DRAW_LINE)
+            addAction(ACTION_CLEAR_DRAWINGS)
+            addAction(ACTION_CLEAR_ALL)
+        }
+        registerReceiver(elementDataReceiver, filter, Context.RECEIVER_EXPORTED)
         
         fetchButton.setOnClickListener {
             fetchElementData()

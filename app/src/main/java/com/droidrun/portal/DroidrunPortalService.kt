@@ -53,9 +53,12 @@ class DroidrunPortalService : AccessibilityService() {
         const val EXTRA_ELEMENTS_DATA = "elements_data"
         const val EXTRA_ALL_ELEMENTS_DATA = "all_elements_data"
         const val EXTRA_OVERLAY_VISIBLE = "overlay_visible"
+        
+        // Static reference to overlay manager
+        var overlayManager: OverlayManager? = null
+            private set
     }
     
-    private lateinit var overlayManager: OverlayManager
     private val mainHandler = Handler(Looper.getMainLooper())
     private var isInitialized = false
     private val screenBounds = Rect()
@@ -96,10 +99,10 @@ class DroidrunPortalService : AccessibilityService() {
                     val shouldShow = intent.getBooleanExtra(EXTRA_OVERLAY_VISIBLE, !overlayVisible)
                     Log.e("DROIDRUN_RECEIVER", "Received TOGGLE_OVERLAY command: $shouldShow")
                     if (shouldShow) {
-                        overlayManager.showOverlay()
+                        overlayManager?.showOverlay()
                         overlayVisible = true
                     } else {
-                        overlayManager.hideOverlay()
+                        overlayManager?.hideOverlay()
                         overlayVisible = false
                     }
                     val responseIntent = Intent(ACTION_ELEMENTS_RESPONSE).apply {
@@ -117,7 +120,7 @@ class DroidrunPortalService : AccessibilityService() {
                     Log.e("DROIDRUN_RECEIVER", "Received UPDATE_OVERLAY_OFFSET command: $offsetValue")
                     
                     // Update the OverlayManager with the new offset
-                    overlayManager.setPositionOffsetY(offsetValue)
+                    overlayManager?.setPositionOffsetY(offsetValue)
                     
                     // Send confirmation with current offset
                     val responseIntent = Intent(ACTION_ELEMENTS_RESPONSE).apply {
@@ -132,10 +135,10 @@ class DroidrunPortalService : AccessibilityService() {
                 ACTION_FORCE_HIDE_OVERLAY -> {
                     Log.e("DROIDRUN_RECEIVER", "Received FORCE_HIDE_OVERLAY command")
                     if (isOverlayManagerAvailable()) {
-                        overlayManager.hideOverlay()
+                        overlayManager?.hideOverlay()
                         overlayVisible = false
-                        overlayManager.clearElements()
-                        overlayManager.refreshOverlay()
+                        overlayManager?.clearElements()
+                        overlayManager?.refreshOverlay()
                         
                         // Send confirmation
                         val responseIntent = Intent(ACTION_ELEMENTS_RESPONSE).apply {
@@ -197,7 +200,7 @@ class DroidrunPortalService : AccessibilityService() {
             resetOverlayState()
             
             if (isInitialized) {
-                overlayManager.hideOverlay()
+                overlayManager?.hideOverlay()
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error in onDestroy: ${e.message}", e)
@@ -322,12 +325,12 @@ class DroidrunPortalService : AccessibilityService() {
             
             // Update UI if visible
             if (overlayVisible) {
-                overlayManager.clearElements()
+                overlayManager?.clearElements()
                 
                 for ((element, weight) in sortedElements) {
                     val heatmapColor = calculateHeatmapColor(weight)
                     
-                    overlayManager.addElement(
+                    overlayManager?.addElement(
                         rect = element.rect,
                         type = "${element.className}", 
                         text = element.text,
@@ -336,7 +339,7 @@ class DroidrunPortalService : AccessibilityService() {
                     )
                 }
                 
-                overlayManager.refreshOverlay()
+                overlayManager?.refreshOverlay()
             }
             
             // Update displayed elements list
@@ -379,8 +382,8 @@ class DroidrunPortalService : AccessibilityService() {
                 return
             }
             
-            overlayManager.clearElements()
-            overlayManager.refreshOverlay()
+            overlayManager?.clearElements()
+            overlayManager?.refreshOverlay()
             
             clearElementList()
             
@@ -412,8 +415,8 @@ class DroidrunPortalService : AccessibilityService() {
             
             if (currentPackageName.isEmpty()) {
                 if (overlayVisible) {
-                    overlayManager.clearElements()
-                    overlayManager.refreshOverlay()
+                    overlayManager?.clearElements()
+                    overlayManager?.refreshOverlay()
                 }
                 isProcessing.set(false)
                 return
@@ -441,8 +444,8 @@ class DroidrunPortalService : AccessibilityService() {
             
             if (visibleElements.isEmpty()) {
                 if (overlayVisible) {
-                    overlayManager.clearElements()
-                    overlayManager.refreshOverlay()
+                    overlayManager?.clearElements()
+                    overlayManager?.refreshOverlay()
                 }
                 isProcessing.set(false)
                 return
@@ -461,8 +464,8 @@ class DroidrunPortalService : AccessibilityService() {
         } catch (e: Exception) {
             Log.e(TAG, "Error processing active window: ${e.message}", e)
             if (overlayVisible) {
-                overlayManager.clearElements()
-                overlayManager.refreshOverlay()
+                overlayManager?.clearElements()
+                overlayManager?.refreshOverlay()
             }
         } finally {
             isProcessing.set(false)
@@ -671,7 +674,7 @@ class DroidrunPortalService : AccessibilityService() {
                 return
             }
             
-            overlayManager.clearElements()
+            overlayManager?.clearElements()
             
             // Process elements in order of nesting (parents before children)
             val elementsByNesting = displayedElements.sortedBy { (element, _) -> 
@@ -691,12 +694,12 @@ class DroidrunPortalService : AccessibilityService() {
                     }
                     
                     // Get the index this element will have in the overlay
-                    val overlayIndex = overlayManager.getElementCount()
+                    val overlayIndex = overlayManager?.getElementCount() ?: 0
                     
                     // Directly assign the overlay index to the element
                     element.overlayIndex = overlayIndex
                     
-                    overlayManager.addElement(
+                    overlayManager?.addElement(
                         rect = element.rect,
                         type = "${element.className}",
                         text = label,
@@ -711,7 +714,7 @@ class DroidrunPortalService : AccessibilityService() {
                 }
             }
             
-            overlayManager.refreshOverlay()
+            overlayManager?.refreshOverlay()
             
         } catch (e: Exception) {
             Log.e(TAG, "Error in updateOverlayWithTimeBasedWeights: ${e.message}", e)
@@ -744,7 +747,7 @@ class DroidrunPortalService : AccessibilityService() {
         mainHandler.postDelayed({
             try {
                 if (isOverlayManagerAvailable()) {
-                    overlayManager.showOverlay()
+                    overlayManager?.showOverlay()
                     startPeriodicUpdates()
                     mainHandler.post(visualizationRunnable)
                     
@@ -1322,7 +1325,7 @@ class DroidrunPortalService : AccessibilityService() {
 
     // Helper method to check if overlayManager is available
     private fun isOverlayManagerAvailable(): Boolean {
-        return this::overlayManager.isInitialized && isInitialized
+        return overlayManager != null && isInitialized
     }
 
     // Helper function to find meaningful text in children
