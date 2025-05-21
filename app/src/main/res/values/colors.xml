@@ -8,15 +8,29 @@
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
     
-    <!-- Droidrun Portal brand colors -->
-    <color name="droidrun_primary">#6200EE</color>
-    <color name="droidrun_primary_dark">#3700B3</color>
-    <color name="droidrun_primary_light">#BB86FC</color>
-    <color name="droidrun_accent">#03DAC5</color>
-    <color name="droidrun_green">#4CAF50</color>
-    <color name="droidrun_orange">#FF9800</color>
-    <color name="droidrun_background">#F5F5F5</color>
-    <color name="droidrun_card">#FFFFFF</color>
-    <color name="droidrun_text_light">#E0E0E0</color>
-    <color name="droidrun_text_dark">#333333</color>
+    <!-- Droidrun Portal brand colors - teal green palette -->
+    <color name="droidrun_primary">#00BFA5</color>
+    <color name="droidrun_primary_dark">#008F76</color>
+    <color name="droidrun_primary_light">#1DEDB8</color>
+    <color name="droidrun_accent">#1DEDB8</color>
+    <color name="droidrun_secondary">#00BFA5</color>
+    <color name="droidrun_green">#00E676</color>
+    <color name="droidrun_orange">#FFB74D</color>
+    <color name="droidrun_background">#1A1E1C</color>
+    <color name="droidrun_surface">#252A27</color>
+    <color name="droidrun_card">#2A332F</color>
+    <color name="droidrun_text_primary">#FFFFFF</color>
+    <color name="droidrun_text_secondary">#B7F0DA</color>
+    <color name="droidrun_text_hint">#8AE0C7</color>
+    <color name="droidrun_text_light">#D5F5EB</color>
+    <color name="droidrun_text_dark">#FFFFFF</color>
+    
+    <!-- UI element colors -->
+    <color name="droidrun_divider">#3C5A4F</color>
+    <color name="droidrun_shadow">#20000000</color>
+    <color name="droidrun_ripple">#3300E5B9</color>
+    <color name="droidrun_error">#FF5252</color>
+    <color name="droidrun_success">#00E676</color>
+    <color name="droidrun_warning">#FFD740</color>
+    <color name="droidrun_disabled">#757575</color>
 </resources>

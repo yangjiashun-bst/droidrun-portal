@@ -18,6 +18,9 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.switchmaterial.SwitchMaterial
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
+import android.provider.Settings
+import android.widget.ImageView
+import android.view.View
 
 class MainActivity : AppCompatActivity() {
     
@@ -29,6 +32,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var offsetSlider: SeekBar
     private lateinit var offsetInput: TextInputEditText
     private lateinit var offsetInputLayout: TextInputLayout
+    private lateinit var accessibilityIndicator: View
+    private lateinit var accessibilityStatusText: TextView
+    private lateinit var accessibilityStatusContainer: View
+    private lateinit var accessibilityStatusCard: com.google.android.material.card.MaterialCardView
     
     // Flag to prevent infinite update loops
     private var isProgrammaticUpdate = false
@@ -98,6 +105,10 @@ class MainActivity : AppCompatActivity() {
         offsetSlider = findViewById(R.id.offset_slider)
         offsetInput = findViewById(R.id.offset_input)
         offsetInputLayout = findViewById(R.id.offset_input_layout)
+        accessibilityIndicator = findViewById(R.id.accessibility_indicator)
+        accessibilityStatusText = findViewById(R.id.accessibility_status_text)
+        accessibilityStatusContainer = findViewById(R.id.accessibility_status_container)
+        accessibilityStatusCard = findViewById(R.id.accessibility_status_card)
         
         // Configure the offset slider and input
         setupOffsetSlider()
@@ -118,6 +129,20 @@ class MainActivity : AppCompatActivity() {
         toggleOverlay.setOnCheckedChangeListener { _, isChecked ->
             toggleOverlayVisibility(isChecked)
         }
+        
+        // Setup accessibility status container
+        accessibilityStatusContainer.setOnClickListener {
+            openAccessibilitySettings()
+        }
+        
+        // Check initial accessibility status
+        updateAccessibilityStatusIndicator()
+    }
+    
+    override fun onResume() {
+        super.onResume()
+        // Update the accessibility status indicator when app resumes
+        updateAccessibilityStatusIndicator()
     }
     
     private fun setupOffsetSlider() {
@@ -319,6 +344,58 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) {
             statusText.text = "Error refreshing elements: ${e.message}"
             Log.e("DROIDRUN_MAIN", "Error sending retrigger broadcast: ${e.message}")
+        }
+    }
+    
+    // Check if the accessibility service is enabled
+    private fun isAccessibilityServiceEnabled(): Boolean {
+        val accessibilityServiceName = packageName + "/" + DroidrunPortalService::class.java.canonicalName
+        
+        try {
+            val enabledServices = Settings.Secure.getString(
+                contentResolver,
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+            )
+            
+            return enabledServices?.contains(accessibilityServiceName) == true
+        } catch (e: Exception) {
+            Log.e("DROIDRUN_MAIN", "Error checking accessibility status: ${e.message}")
+            return false
+        }
+    }
+    
+    // Update the accessibility status indicator based on service status
+    private fun updateAccessibilityStatusIndicator() {
+        val isEnabled = isAccessibilityServiceEnabled()
+        
+        if (isEnabled) {
+            accessibilityIndicator.setBackgroundResource(R.drawable.circle_indicator_green)
+            accessibilityStatusText.text = "ENABLED"
+            accessibilityStatusCard.setCardBackgroundColor(resources.getColor(R.color.droidrun_secondary, null))
+        } else {
+            accessibilityIndicator.setBackgroundResource(R.drawable.circle_indicator_red)
+            accessibilityStatusText.text = "DISABLED"
+            accessibilityStatusCard.setCardBackgroundColor(resources.getColor(R.color.droidrun_secondary, null))
+        }
+    }
+    
+    // Open accessibility settings to enable the service
+    private fun openAccessibilitySettings() {
+        try {
+            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+            startActivity(intent)
+            Toast.makeText(
+                this,
+                "Please enable Droidrun Portal in Accessibility Services",
+                Toast.LENGTH_LONG
+            ).show()
+        } catch (e: Exception) {
+            Log.e("DROIDRUN_MAIN", "Error opening accessibility settings: ${e.message}")
+            Toast.makeText(
+                this,
+                "Error opening accessibility settings",
+                Toast.LENGTH_SHORT
+            ).show()
         }
     }
 } 
