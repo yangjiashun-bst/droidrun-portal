@@ -51,6 +51,14 @@
                 android:name="android.view.im"
                 android:resource="@xml/method" />
         </service>
+
+        <receiver
+            android:name=".PortalBroadcastReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.droidrun.portal.DROIDRUN_INPUT_B64"/>
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>

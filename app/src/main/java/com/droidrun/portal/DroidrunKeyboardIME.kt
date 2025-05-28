@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.inputmethodservice.InputMethodService
+import android.os.Build
 import android.util.Base64
 import android.util.Log
 import android.view.InputDevice
@@ -12,7 +13,6 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.ExtractedTextRequest
 import android.view.inputmethod.InputConnection
-import android.content.Context.RECEIVER_EXPORTED
 
 class DroidrunKeyboardIME : InputMethodService() {
     private val TAG = "DroidrunKeyboardIME"
@@ -39,7 +39,13 @@ class DroidrunKeyboardIME : InputMethodService() {
                 addAction(IME_CLEAR_TEXT)
             }
             mReceiver = KeyboardReceiver()
-            registerReceiver(mReceiver, filter, RECEIVER_EXPORTED)
+            
+            // Handle different API levels for receiver registration
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(mReceiver, filter, Context.RECEIVER_EXPORTED)
+            } else {
+                registerReceiver(mReceiver, filter)
+            }
         }
 
         return mInputView
