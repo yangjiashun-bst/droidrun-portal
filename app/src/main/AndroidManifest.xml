@@ -5,6 +5,14 @@
 
     <!-- Permission to draw over other apps -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    
+    <!-- Define a custom permission for secure broadcast communication -->
+    <permission
+        android:name="com.droidrun.portal.SEND_INPUT_DATA"
+        android:protectionLevel="signature" />
+    
+    <!-- Use our custom permission -->
+    <uses-permission android:name="com.droidrun.portal.SEND_INPUT_DATA" />
 
     <application
         android:allowBackup="true"
