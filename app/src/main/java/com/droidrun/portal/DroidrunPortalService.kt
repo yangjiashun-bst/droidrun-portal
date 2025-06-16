@@ -15,6 +15,7 @@ import android.graphics.Color
 import android.content.BroadcastReceiver
 import android.content.Intent
 import android.content.IntentFilter
+import android.view.accessibility.AccessibilityWindowInfo
 import com.droidrun.portal.features.overlay.ElementNode
 import com.droidrun.portal.features.overlay.OverlayManager
 import org.json.JSONArray
@@ -48,11 +49,12 @@ class DroidrunPortalService : AccessibilityService() {
         const val ACTION_GET_INTERACTIVE_ELEMENTS = "com.droidrun.portal.GET_INTERACTIVE_ELEMENTS"
         const val ACTION_FORCE_HIDE_OVERLAY = "com.droidrun.portal.FORCE_HIDE_OVERLAY"
         const val ACTION_UPDATE_OVERLAY_OFFSET = "com.droidrun.portal.UPDATE_OVERLAY_OFFSET"
+        const val ACTION_GET_PHONE_STATE = "com.droidrun.portal.GET_PHONE_STATE"
         const val EXTRA_OVERLAY_OFFSET = "overlay_offset"
         const val EXTRA_ELEMENTS_DATA = "elements_data"
         const val EXTRA_ALL_ELEMENTS_DATA = "all_elements_data"
         const val EXTRA_OVERLAY_VISIBLE = "overlay_visible"
-
+        const val EXTRA_PHONE_STATE_DATA = "phone_state_data"
     }
     
     private lateinit var overlayManager: OverlayManager
@@ -148,6 +150,10 @@ class DroidrunPortalService : AccessibilityService() {
                         Log.e("DROIDRUN_RECEIVER", "Cannot hide overlay: OverlayManager not initialized")
                     }
                 }
+                ACTION_GET_PHONE_STATE -> {
+                    Log.e("DROIDRUN_RECEIVER", "Received GET_PHONE_STATE command")
+                    broadcastPhoneStateData()
+                }
             }
         }
     }
@@ -164,6 +170,7 @@ class DroidrunPortalService : AccessibilityService() {
                 addAction(ACTION_RETRIGGER_ELEMENTS)
                 addAction(ACTION_FORCE_HIDE_OVERLAY)
                 addAction(ACTION_UPDATE_OVERLAY_OFFSET)
+                addAction(ACTION_GET_PHONE_STATE)
             }
             registerReceiver(broadcastReceiver, intentFilter, RECEIVER_EXPORTED)
             Log.e("DROIDRUN_RECEIVER", "Registered receiver for commands with EXPORTED flag")
@@ -1317,6 +1324,188 @@ class DroidrunPortalService : AccessibilityService() {
         } catch (e: Exception) {
             Log.e(TAG, "Error broadcasting all element data: ${e.message}", e)
             Log.e("DROIDRUN_ADB_RESPONSE", "ERROR: ${e.message}")
+        }
+    }
+
+    private fun broadcastPhoneStateData() {
+        try {
+            if (!isInitialized) {
+                Log.e("DROIDRUN_DEBUG", "Service not initialized yet")
+                return
+            }
+
+            mainHandler.postDelayed({
+                try {
+                    val phoneStateJson = JSONObject()
+
+                    // 1. Get current app name
+                    val currentAppName = when {
+                        currentPackageName.isNotEmpty() -> {
+                            try {
+                                val packageManager = packageManager
+                                val appInfo = packageManager.getApplicationInfo(currentPackageName, 0)
+                                packageManager.getApplicationLabel(appInfo).toString()
+                            } catch (e: Exception) {
+                                Log.e("DROIDRUN_PHONE_STATE", "Could not get app name for $currentPackageName: ${e.message}")
+                                currentPackageName // Fallback to package name
+                            }
+                        }
+                        else -> "Unknown"
+                    }
+
+                    // 2. Check if keyboard is visible
+                    val isKeyboardVisible = detectKeyboardVisibility()
+
+                    // 3. Get currently focused element
+                    val focusedElementInfo = getCurrentlyFocusedElement()
+
+                    // Build JSON response
+                    phoneStateJson.apply {
+                        put("currentApp", sanitizeText(currentAppName))
+                        put("packageName", sanitizeText(currentPackageName))
+                        put("keyboardVisible", isKeyboardVisible)
+
+                        if (focusedElementInfo != null) {
+                            put("focusedElement", focusedElementInfo)
+                        } else {
+                            put("focusedElement", JSONObject.NULL)
+                        }
+
+                        put("timestamp", System.currentTimeMillis())
+                    }
+
+                    val jsonData = phoneStateJson.toString()
+
+                    // Log the phone state data
+                    Log.e("DROIDRUN_PHONE_STATE", "======= PHONE STATE START =======")
+                    Log.e("DROIDRUN_PHONE_STATE", "Current App: $currentAppName ($currentPackageName)")
+                    Log.e("DROIDRUN_PHONE_STATE", "Keyboard Visible: $isKeyboardVisible")
+                    Log.e("DROIDRUN_PHONE_STATE", "Focused Element: ${focusedElementInfo?.getString("text") ?: "None"}")
+                    Log.e("DROIDRUN_PHONE_STATE", "======= PHONE STATE END =======")
+
+                    // Split the JSON data into chunks to avoid logcat truncation
+                    val maxChunkSize = 4000
+                    val chunks = jsonData.chunked(maxChunkSize)
+                    val totalChunks = chunks.size
+
+                    // Output each chunk with metadata for reassembly
+                    chunks.forEachIndexed { index, chunk ->
+                        Log.e("DROIDRUN_PHONE_STATE_DATA", "CHUNK|$index|$totalChunks|$chunk")
+                    }
+
+                    // Send broadcast response
+                    val responseIntent = Intent(ACTION_ELEMENTS_RESPONSE).apply {
+                        putExtra(EXTRA_PHONE_STATE_DATA, jsonData)
+                    }
+                    sendBroadcast(responseIntent)
+
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error processing phone state: ${e.message}", e)
+                    Log.e("DROIDRUN_PHONE_STATE", "ERROR: ${e.message}")
+                }
+            }, 100)
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error broadcasting phone state data: ${e.message}", e)
+            Log.e("DROIDRUN_PHONE_STATE", "ERROR: ${e.message}")
+        }
+    }
+
+    private fun detectKeyboardVisibility(): Boolean {
+        return try {
+            // Method 1: Check window information for soft input window
+            val windows = windows
+            if (windows != null) {
+                val hasInputMethodWindow = windows.any { window ->
+                    window.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD
+                }
+                windows.forEach { it.recycle() }
+                if (hasInputMethodWindow) return true
+            }
+
+            // Method 2: Check if any element is currently focused and editable
+            val focusedNode = findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+            val isInputFocused = focusedNode?.isEditable == true
+            focusedNode?.recycle()
+
+            // Method 3: Check screen bounds vs display bounds (keyboard takes up space)
+            val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            val display = windowManager.defaultDisplay
+            val realSize = Point()
+            val displaySize = Point()
+
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.JELLY_BEAN_MR1) {
+                display.getRealSize(realSize)
+                display.getSize(displaySize)
+
+                // If there's a significant difference in height, keyboard might be visible
+                val heightDifference = realSize.y - displaySize.y
+                val isKeyboardSizeDetected = heightDifference > 200 // Threshold for keyboard detection
+
+                return isInputFocused || isKeyboardSizeDetected
+            }
+
+            isInputFocused
+        } catch (e: Exception) {
+            Log.e("DROIDRUN_PHONE_STATE", "Error detecting keyboard visibility: ${e.message}")
+            false
+        }
+    }
+
+    private fun getCurrentlyFocusedElement(): JSONObject? {
+        return try {
+            // Try to find the input-focused element first
+            var focusedNode = findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+
+            // If no input focus, try accessibility focus
+            if (focusedNode == null) {
+                focusedNode = findFocus(AccessibilityNodeInfo.FOCUS_ACCESSIBILITY)
+            }
+
+            if (focusedNode != null) {
+                val rect = Rect()
+                focusedNode.getBoundsInScreen(rect)
+
+                val text = focusedNode.text?.toString() ?: ""
+                val contentDesc = focusedNode.contentDescription?.toString() ?: ""
+                val className = focusedNode.className?.toString() ?: ""
+                val viewId = focusedNode.viewIdResourceName ?: ""
+
+                val displayText = when {
+                    text.isNotEmpty() -> text
+                    contentDesc.isNotEmpty() -> contentDesc
+                    viewId.isNotEmpty() -> viewId.substringAfterLast('/')
+                    else -> className.substringAfterLast('.')
+                }
+
+                val focusedElementJson = JSONObject().apply {
+                    put("text", sanitizeText(displayText))
+                    put("className", sanitizeText(className.substringAfterLast('.')))
+                    put("bounds", "${rect.left},${rect.top},${rect.right},${rect.bottom}")
+                    put("resourceId", sanitizeText(viewId))
+                    put("isEditable", focusedNode.isEditable)
+                    put("isClickable", focusedNode.isClickable)
+                    put("isCheckable", focusedNode.isCheckable)
+                    put("isScrollable", focusedNode.isScrollable)
+                    put("isFocusable", focusedNode.isFocusable)
+                    put("type", when {
+                        focusedNode.isEditable -> "input"
+                        focusedNode.isClickable -> "clickable"
+                        focusedNode.isCheckable -> "checkable"
+                        focusedNode.isScrollable -> "scrollable"
+                        text.isNotEmpty() -> "text"
+                        else -> "view"
+                    })
+                }
+
+                focusedNode.recycle()
+                focusedElementJson
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            Log.e("DROIDRUN_PHONE_STATE", "Error getting focused element: ${e.message}")
+            null
         }
     }
 

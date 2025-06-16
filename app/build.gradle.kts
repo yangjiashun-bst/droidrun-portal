@@ -59,9 +59,6 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
     implementation(libs.androidx.viewmodel)
 
-    // google genai
-    implementation(libs.google.genai)
-
     // testing
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
