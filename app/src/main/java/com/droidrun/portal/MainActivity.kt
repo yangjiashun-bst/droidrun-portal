@@ -14,10 +14,19 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 
 class MainActivity : AppCompatActivity() {
 
+    private lateinit var viewModel: MainViewModel
+
     companion object {
         // Intent action for updating overlay offset
         const val ACTION_UPDATE_OVERLAY_OFFSET = "com.droidrun.portal.UPDATE_OVERLAY_OFFSET"
         const val EXTRA_OVERLAY_OFFSET = "overlay_offset"
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::viewModel.isInitialized) {
+            viewModel.updateAccessibilityStatusIndicator()
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -30,7 +39,7 @@ class MainActivity : AppCompatActivity() {
                     background = Color.Transparent,
                 )
             ) {
-                val viewModel: MainViewModel = viewModel()
+                viewModel = viewModel()
                 MainScreen(
                     viewModel = viewModel,
                     onOpenAccessibilitySettings = ::openAccessibilitySettings

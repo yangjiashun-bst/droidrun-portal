@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.BroadcastReceiver
 import android.content.IntentFilter
+import androidx.core.content.ContextCompat
 import com.droidrun.portal.DroidrunPortalService
 import com.droidrun.portal.DroidrunPortalService.Companion.ACTION_ELEMENTS_RESPONSE
 import com.droidrun.portal.DroidrunPortalService.Companion.ACTION_GET_ELEMENTS
@@ -32,6 +33,7 @@ class OverlayRepository(private val context: Context) {
         fun onToast(message: String)
         fun onOverlaySwitchChanged(isChecked: Boolean)
         fun onOffsetChanged(newOffset: Int)
+        fun onAccessibilityServiceStateChanged(isEnabled: Boolean)
     }
 
     private var listener: Listener? = null
@@ -56,16 +58,13 @@ class OverlayRepository(private val context: Context) {
                     listener?.onToast("Refresh successful: $count elements")
                 }
 
-                if (intent.hasExtra(EXTRA_OVERLAY_VISIBLE)) {
-                    listener?.onOverlaySwitchChanged(
-                        intent.getBooleanExtra(EXTRA_OVERLAY_VISIBLE, true)
-                    )
-                }
-
                 if (intent.hasExtra("current_offset")) {
                     val currentOffset = intent.getIntExtra("current_offset", -128)
                     listener?.onOffsetChanged(currentOffset)
                 }
+            } else if (intent.action == DroidrunPortalService.ACTION_ACCESSIBILITY_SERVICE_STATE_CHANGED) {
+                val isEnabled = intent.getBooleanExtra("isEnabled", false)
+                listener?.onAccessibilityServiceStateChanged(isEnabled)
             }
         }
     }
@@ -73,8 +72,14 @@ class OverlayRepository(private val context: Context) {
     init {
         val filter = IntentFilter().apply {
             addAction(ACTION_ELEMENTS_RESPONSE)
+            addAction(DroidrunPortalService.ACTION_ACCESSIBILITY_SERVICE_STATE_CHANGED)
         }
-        context.registerReceiver(elementDataReceiver, filter, Context.RECEIVER_EXPORTED)
+        ContextCompat.registerReceiver(
+            context,
+            elementDataReceiver,
+            filter,
+            ContextCompat.RECEIVER_EXPORTED
+        )
     }
 
     fun fetchElementData() {
@@ -89,7 +94,7 @@ class OverlayRepository(private val context: Context) {
 
     fun setOverlayEnabled(visible: Boolean) {
         val intent = Intent(DroidrunPortalService.ACTION_TOGGLE_OVERLAY).apply {
-            putExtra(DroidrunPortalService.EXTRA_OVERLAY_VISIBLE, visible)
+            putExtra(EXTRA_OVERLAY_VISIBLE, visible)
         }
         context.sendBroadcast(intent)
     }

@@ -31,7 +31,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application),
     // region UI Events
     fun onFetchButtonClicked() = repository.fetchElementData()
     fun onRetriggerButtonClicked() = repository.retriggerElements()
-    fun onOverlaySwitchToggled(isChecked: Boolean) = repository.setOverlayEnabled(isChecked)
+    fun onOverlaySwitchToggled(isChecked: Boolean) {
+        overlayVisible = isChecked
+        repository.setOverlayEnabled(isChecked)
+    }
     fun onOffsetChanged(value: String) {
         value.toIntOrNull()?.let(repository::setOverlayOffset)
     }
@@ -75,5 +78,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application),
 
     override fun onOffsetChanged(newOffset: Int) {
         this.offset = newOffset
+    }
+
+    override fun onAccessibilityServiceStateChanged(isEnabled: Boolean) {
+        if (isEnabled) {
+            accessibilityIndicatorColor = Color.Green
+            accessibilityStatus = "ENABLED"
+        } else {
+            accessibilityIndicatorColor = Color.Red
+            accessibilityStatus = "DISABLED"
+            overlayVisible = false
+        }
     }
 }

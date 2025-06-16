@@ -242,7 +242,7 @@ fun MainScreen(viewModel: MainViewModel, onOpenAccessibilitySettings: () -> Unit
                             checked = overlayVisible,
                             onCheckedChange = onToggleOverlay,
                             modifier = Modifier.weight(1f),
-                            enabled = true
+                            enabled = accessibilityStatus == "ENABLED"
                         )
                     }
                 }

@@ -50,6 +50,7 @@ class DroidrunPortalService : AccessibilityService() {
         const val ACTION_FORCE_HIDE_OVERLAY = "com.droidrun.portal.FORCE_HIDE_OVERLAY"
         const val ACTION_UPDATE_OVERLAY_OFFSET = "com.droidrun.portal.UPDATE_OVERLAY_OFFSET"
         const val ACTION_GET_PHONE_STATE = "com.droidrun.portal.GET_PHONE_STATE"
+        const val ACTION_ACCESSIBILITY_SERVICE_STATE_CHANGED = "com.droidrun.portal.ACCESSIBILITY_SERVICE_STATE_CHANGED"
         const val EXTRA_OVERLAY_OFFSET = "overlay_offset"
         const val EXTRA_ELEMENTS_DATA = "elements_data"
         const val EXTRA_ALL_ELEMENTS_DATA = "all_elements_data"
@@ -248,14 +249,6 @@ class DroidrunPortalService : AccessibilityService() {
     
     private fun stopPeriodicUpdates() {
         mainHandler.removeCallbacks(updateRunnable)
-    }
-    
-    private fun startVisualizationUpdates() {
-        mainHandler.postDelayed(visualizationRunnable, VISUALIZATION_REFRESH_MS)
-    }
-    
-    private fun stopVisualizationUpdates() {
-        mainHandler.removeCallbacks(visualizationRunnable)
     }
     
     private fun updateVisualizationIfNeeded() {
@@ -738,15 +731,28 @@ class DroidrunPortalService : AccessibilityService() {
 
     override fun onInterrupt() {
         Log.d(TAG, "Service interrupted")
-        // Clear overlay when service is interrupted
         if (isOverlayManagerAvailable()) {
             resetOverlayState()
         }
     }
 
+    override fun onUnbind(intent: Intent?): Boolean {
+        Log.d(TAG, "Service unbound")
+        val disableIntent = Intent(ACTION_ACCESSIBILITY_SERVICE_STATE_CHANGED).apply {
+            putExtra("isEnabled", false)
+        }
+        sendBroadcast(disableIntent)
+        resetOverlayState()
+        return super.onUnbind(intent)
+    }
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         Log.d(TAG, "Service connected, initializing overlay")
+        val intent = Intent(ACTION_ACCESSIBILITY_SERVICE_STATE_CHANGED).apply {
+            putExtra("isEnabled", true)
+        }
+        sendBroadcast(intent)
         
         mainHandler.postDelayed({
             try {
@@ -1514,26 +1520,4 @@ class DroidrunPortalService : AccessibilityService() {
         return this::overlayManager.isInitialized && isInitialized
     }
 
-    // Helper function to find meaningful text in children
-    private fun findMeaningfulTextInChildren(element: ElementNode): String {
-        val meaningfulText = mutableListOf<String>()
-        
-        // Find all elements that are contained within this element's bounds
-        val childElements = visibleElements.filter { child ->
-            child != element && // Not the element itself
-            isWithinBounds(child.rect, element.rect) // Within element bounds
-        }
-        
-        // Process each child for meaningful text
-        for (child in childElements) {
-            if (child.text.isNotEmpty() && 
-                !child.text.startsWith("android:") && 
-                !child.text.contains("_") && // Skip IDs and resource names
-                child.text.length > 1) {  // Skip single characters
-                meaningfulText.add(child.text)
-            }
-        }
-        
-        return meaningfulText.joinToString(" ")
-    }
 } 
