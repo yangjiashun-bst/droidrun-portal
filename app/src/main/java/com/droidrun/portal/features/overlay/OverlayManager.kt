@@ -1,4 +1,4 @@
-package com.droidrun.portal
+package com.droidrun.portal.features.overlay
 
 import android.content.Context
 import android.graphics.Canvas
@@ -12,10 +12,20 @@ import android.util.Log
 import android.view.Gravity
 import android.view.WindowManager
 import android.widget.FrameLayout
-import android.content.Intent
 import android.view.View
 import java.util.concurrent.atomic.AtomicBoolean
 
+/**
+ * Manages the creation, display, and content of the screen overlay.
+ *
+ * This class is the heart of the overlay feature. It is responsible for creating, showing,
+ * hiding, and managing the overlay `View` itself. It maintains a list of `ElementInfo`
+ * objects and handles all the drawing logic on the `Canvas`. It completely abstracts the
+ * complexities of the Android `WindowManager` and the `Canvas` drawing APIs, providing a
+ * simple interface for adding, clearing, and refreshing elements on the screen.
+ *
+ * @param context The application context, used for accessing system services.
+ */
 class OverlayManager(private val context: Context) {
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private var overlayView: OverlayView? = null
@@ -57,25 +67,11 @@ class OverlayManager(private val context: Context) {
     
     // Add method to adjust the vertical offset
     fun setPositionOffsetY(offsetY: Int) {
+        val diff = offsetY - this.positionOffsetY
         this.positionOffsetY = offsetY
-        // Redraw existing elements with the new offset
-        val existingElements = ArrayList(elementRects)
-        elementRects.clear()
         
-        // Re-add elements with the updated offset
-        for (element in existingElements) {
-            val originalRect = Rect(element.rect)
-            // Adjust back to original position by removing the old offset
-            originalRect.offset(0, -positionOffsetY)
-            // Add again with new offset
-            addElement(
-                rect = originalRect,
-                type = element.type,
-                text = element.text,
-                depth = element.depth,
-                color = element.color
-            )
-        }
+        // Update the position of each element directly
+        elementRects.forEach { it.rect.offset(0, diff) }
         
         refreshOverlay()
     }
@@ -225,56 +221,34 @@ class OverlayManager(private val context: Context) {
     // Update an existing element without changing its index
     fun updateElement(rect: Rect, text: String, color: Int = Color.GREEN) {
         val correctedRect = correctRectPosition(rect)
-        
-        // Try to find the existing element first
-        val existingElement = elementRects.find { element ->
-            // Check if this is the same element by matching text and checking for significant overlap
-            if (element.text == text) {
-                val overlapRect = Rect(element.rect)
-                if (overlapRect.intersect(correctedRect)) {
-                    val overlapArea = overlapRect.width() * overlapRect.height()
-                    val elementArea = element.rect.width() * element.rect.height()
-                    val inputArea = correctedRect.width() * correctedRect.height()
-                    val minArea = minOf(elementArea, inputArea)
-                    
-                    // If rectangles have significant overlap (>50%), it's likely the same element
-                    minArea > 0 && overlapArea.toFloat() / minArea > 0.5f
-                } else {
-                    false
-                }
+        val existingElement = findElement(correctedRect, text)
+
+        if (existingElement != null) {
+            val index = elementRects.indexOf(existingElement)
+            if (index != -1) {
+                elementRects[index] = existingElement.copy(rect = correctedRect, text = text)
+            }
+        } else {
+            addElement(rect, "UpdatedElement", text, 0, color)
+        }
+    }
+    
+    private fun findElement(rect: Rect, text: String): ElementInfo? {
+        return elementRects.find { element ->
+            val textMatches = element.text.trim() == text.trim()
+            if (!textMatches) return@find false
+
+            val overlapRect = Rect(element.rect)
+            if (overlapRect.intersect(rect)) {
+                val overlapArea = overlapRect.width() * overlapRect.height()
+                val elementArea = element.rect.width() * element.rect.height()
+                val inputArea = rect.width() * rect.height()
+                val minArea = minOf(elementArea, inputArea)
+                
+                minArea > 0 && overlapArea.toFloat() / minArea > OVERLAP_THRESHOLD
             } else {
                 false
             }
-        }
-        
-        if (existingElement != null) {
-            // Update the existing element's properties but keep its index
-            val index = existingElement.index
-            val elementIndex = elementRects.indexOf(existingElement)
-            if (elementIndex >= 0) {
-                // Use the existing color to maintain color consistency for the same element
-                elementRects[elementIndex] = ElementInfo(
-                    rect = correctedRect,
-                    type = existingElement.type,
-                    text = text,
-                    depth = existingElement.depth,
-                    color = existingElement.color,
-                    index = index
-                )
-            }
-        } else {
-            // If element doesn't exist, add it as a new element
-            val index = elementIndexCounter++
-            // Assign a color from the color scheme based on the index
-            val colorFromScheme = COLOR_SCHEME[index % COLOR_SCHEME.size]
-            elementRects.add(ElementInfo(
-                rect = correctedRect,
-                type = "UpdatedElement",
-                text = text,
-                depth = 0,
-                color = colorFromScheme,
-                index = index
-            ))
         }
     }
     
@@ -285,43 +259,8 @@ class OverlayManager(private val context: Context) {
 
     // Modified getElementIndex with more lenient matching
     fun getElementIndex(rect: Rect, text: String): Int {
-        // Apply the same position correction that was applied when adding the element
         val correctedRect = correctRectPosition(rect)
-        
-        // First try to find an exact match with the corrected rectangle
-        val exactMatch = elementRects.find { 
-            it.rect == correctedRect && it.text == text 
-        }
-        
-        if (exactMatch != null) {
-            return exactMatch.index
-        }
-        
-        // Try looser matching with lower overlap threshold
-        val similarElement = elementRects.find { element ->
-            val rectOverlaps = Rect.intersects(element.rect, correctedRect)
-            
-            // More lenient text matching
-            val textMatches = element.text.trim() == text.trim()
-            
-            if (rectOverlaps) {
-                val overlapRect = Rect(element.rect)
-                overlapRect.intersect(correctedRect)
-                val overlapArea = overlapRect.width() * overlapRect.height()
-                val elementArea = element.rect.width() * element.rect.height()
-                val inputArea = correctedRect.width() * correctedRect.height()
-                val minArea = minOf(elementArea, inputArea)
-                
-                val hasSignificantOverlap = minArea > 0 && 
-                    overlapArea.toFloat() / minArea > OVERLAP_THRESHOLD
-                
-                hasSignificantOverlap && textMatches
-            } else {
-                false
-            }
-        }
-        
-        return similarElement?.index ?: -1
+        return findElement(correctedRect, text)?.index ?: -1
     }
 
     inner class OverlayView(context: Context) : FrameLayout(context) {
@@ -356,41 +295,27 @@ class OverlayManager(private val context: Context) {
         }
 
         override fun onDraw(canvas: Canvas) {
-            try {
-                if (canvas == null) {
-                    Log.e(TAG, "Canvas is null in onDraw")
-                    return
-                }
+            super.onDraw(canvas)
 
-                if (!isOverlayVisible) {
-                    Log.d(TAG, "Overlay not visible, skipping draw")
-                    return
-                }
+            if (!isOverlayVisible) return
 
-                super.onDraw(canvas)
-                
-                val startTime = System.currentTimeMillis()
-
-                if (elementRects.isEmpty()) {
-                    if (isDebugging()) {
-                        drawDebugRect(canvas)
-                    }
-                    return
-                }
-                
-                // Create a local copy to prevent concurrent modification
-                val elementsToDraw = ArrayList(elementRects)
-                
-                // Sort elements by depth for drawing order
-                val sortedElements = elementsToDraw.sortedBy { it.depth }
-                
-                for (elementInfo in sortedElements) {
+            if (elementRects.isEmpty()) {
+                if (isDebugging()) drawDebugRect(canvas)
+                return
+            }
+            
+            // Create a local copy to prevent concurrent modification issues
+            val elementsToDraw = ArrayList(elementRects)
+            
+            // Sort elements by depth to ensure correct drawing order
+            elementsToDraw.sortBy { it.depth }
+            
+            for (elementInfo in elementsToDraw) {
+                try {
                     drawElement(canvas, elementInfo)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error drawing element ${elementInfo.index}: ${e.message}", e)
                 }
-
-                val drawTime = System.currentTimeMillis() - startTime
-            } catch (e: Exception) {
-                Log.e(TAG, "Error in onDraw: ${e.message}", e)
             }
         }
 

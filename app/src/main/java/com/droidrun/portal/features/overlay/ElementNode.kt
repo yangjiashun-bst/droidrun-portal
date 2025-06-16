@@ -1,4 +1,4 @@
-package com.droidrun.portal
+package com.droidrun.portal.features.overlay
 
 import android.graphics.Rect
 import android.view.accessibility.AccessibilityNodeInfo
@@ -6,7 +6,26 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * Represents a UI element detected by the accessibility service
+ * A data class representing a single UI element captured by the accessibility service.
+ *
+ * This class serves as a rich data model that not only stores the properties of a UI element
+ * (such as its `Rect`, `text`, and `className`) but also its relationships with other elements
+ * (parent, children). It provides a set of helper functions for calculating the element's
+ * weight, checking for overlaps, and traversing the element hierarchy.
+ *
+ * @property nodeInfo The raw `AccessibilityNodeInfo` object from the accessibility service.
+ * @property rect The `Rect` that defines the element's boundaries on the screen.
+ * @property text The text content of the element.
+ * @property className The class name of the element (e.g., "android.widget.Button").
+ * @property windowLayer The layer of the window that the element belongs to.
+ * @property creationTime The time at which the element was created, used for calculating its weight.
+ * @property id A unique ID for the element, generated from its properties.
+ * @property parent A reference to the parent `ElementNode` in the hierarchy.
+ * @property children A list of child `ElementNode` objects.
+ * @property clickableIndex The index of the element in the list of clickable elements.
+ * @property nestingLevel The depth of the element in the hierarchy.
+ * @property semanticParentId The ID of the element's semantic parent.
+ * @property overlayIndex The index of the element as shown in the overlay.
  */
 data class ElementNode(
     val nodeInfo: AccessibilityNodeInfo,

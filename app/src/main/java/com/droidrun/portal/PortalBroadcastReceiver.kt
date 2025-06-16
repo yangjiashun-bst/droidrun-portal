@@ -6,6 +6,15 @@ import android.content.Intent
 import android.util.Base64
 import android.util.Log
 
+/**
+ * A global BroadcastReceiver that serves as the public entry point for the Droidrun Keyboard IME.
+ *
+ * This receiver is declared in the `AndroidManifest.xml` and is responsible for receiving
+ * broadcasts from external applications. It listens for a specific public action and, upon
+ * receiving a valid broadcast, it forwards the data as a new, internal broadcast to be
+ * handled by the `DroidrunKeyboardIME`. This two-step process creates a secure bridge between
+ * external applications and the keyboard service.
+ */
 class PortalBroadcastReceiver : BroadcastReceiver() {
     private val TAG = "PortalBroadcastReceiver"
     
@@ -56,4 +65,4 @@ class PortalBroadcastReceiver : BroadcastReceiver() {
             false
         }
     }
-} 
+}

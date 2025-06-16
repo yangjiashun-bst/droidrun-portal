@@ -8,16 +8,15 @@ import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.content.Context
-import android.content.Context.RECEIVER_NOT_EXPORTED
-import android.content.Context.RECEIVER_EXPORTED
 import android.graphics.Point
 import android.view.WindowManager
-import android.view.accessibility.AccessibilityWindowInfo
 import java.util.concurrent.atomic.AtomicBoolean
 import android.graphics.Color
 import android.content.BroadcastReceiver
 import android.content.Intent
 import android.content.IntentFilter
+import com.droidrun.portal.features.overlay.ElementNode
+import com.droidrun.portal.features.overlay.OverlayManager
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.math.abs
@@ -53,6 +52,7 @@ class DroidrunPortalService : AccessibilityService() {
         const val EXTRA_ELEMENTS_DATA = "elements_data"
         const val EXTRA_ALL_ELEMENTS_DATA = "all_elements_data"
         const val EXTRA_OVERLAY_VISIBLE = "overlay_visible"
+
     }
     
     private lateinit var overlayManager: OverlayManager
