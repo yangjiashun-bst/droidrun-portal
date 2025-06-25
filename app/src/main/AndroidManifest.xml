@@ -25,6 +25,25 @@
         android:theme="@style/Theme.Droidrun"
         tools:targetApi="31">
 
+        <provider
+            android:name=".DroidrunContentProvider"
+            android:authorities="com.droidrun.portal"
+            android:enabled="true"
+            android:exported="true" />
+
+        <service
+            android:name=".DroidrunAccessibilityService"
+            android:enabled="true"
+            android:exported="false"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+
         <activity
             android:name=".MainActivity"
             android:exported="true">
@@ -34,7 +53,7 @@
             </intent-filter>
         </activity>
 
-        <service
+        <!--<service
             android:name=".DroidrunPortalService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
             android:exported="true">
@@ -44,7 +63,7 @@
             <meta-data
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config" />
-        </service>
+        </service>-->
 
         <!-- Keyboard Input Method Service -->
         <service
