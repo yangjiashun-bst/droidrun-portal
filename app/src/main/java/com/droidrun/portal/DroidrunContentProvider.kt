@@ -1,32 +1,18 @@
 package com.droidrun.portal
 
-import android.accessibilityservice.AccessibilityService
-import android.accessibilityservice.GestureDescription
 import android.content.ContentProvider
 import android.content.ContentValues
-import android.content.Context
 import android.content.UriMatcher
 import android.database.Cursor
 import android.database.MatrixCursor
-import android.graphics.Path
 import android.graphics.Rect
 import android.net.Uri
-import android.os.Build
-import android.os.Handler
-import android.os.Looper
 import android.util.Log
 import android.view.accessibility.AccessibilityNodeInfo
-import androidx.annotation.RequiresApi
 import org.json.JSONException
 import org.json.JSONObject
-import java.io.File
-import java.io.FileOutputStream
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 import androidx.core.net.toUri
 import android.os.Bundle
-import android.util.Base64
-import android.view.Display
 import com.droidrun.portal.model.PhoneState
 
 class DroidrunContentProvider : ContentProvider() {
@@ -106,7 +92,9 @@ class DroidrunContentProvider : ContentProvider() {
             val action = values.getAsString("action") ?: return "content://$AUTHORITY/result?status=error&message=No action specified".toUri()
 
             val result = when (action) {
-                "text_input" -> performTextInput(values)
+                "keyboard_input" -> performKeyboardInput(values)
+                "keyboard_clear" -> performKeyboardClear()
+                "keyboard_key" -> performKeyboardKey(values)
                 /*"click" -> performClick(values)
                 "swipe" -> performSwipe(values)
                 "key_press" -> performKeyPress(values)
@@ -234,6 +222,64 @@ class DroidrunContentProvider : ContentProvider() {
             "error: Text input exception: ${e.message}"
         }
     }
+
+    private fun performKeyboardInput(values: ContentValues): String {
+        val keyboardIME = DroidrunKeyboardIME.getInstance()
+            ?: return "error: DroidrunKeyboardIME not active or available"
+
+        // Check if keyboard has input connection
+        if (!keyboardIME.hasInputConnection()) {
+            return "error: No input connection available - keyboard may not be focused on an input field"
+        }
+
+        val hexText = values.getAsString("hex_text")
+            ?: return "error: No hex_text provided"
+
+        return try {
+            if (keyboardIME.inputHexText(hexText)) {
+                val decodedText = hexText.chunked(2).map { it.toInt(16).toChar() }.joinToString("")
+                "success: Hex text input via keyboard - '$decodedText'"
+            } else {
+                "error: Failed to input hex text via keyboard"
+            }
+        } catch (e: Exception) {
+            "error: Invalid hex encoding: ${e.message}"
+        }
+    }
+
+    private fun performKeyboardClear(): String {
+        val keyboardIME = DroidrunKeyboardIME.getInstance()
+            ?: return "error: DroidrunKeyboardIME not active or available"
+
+        if (!keyboardIME.hasInputConnection()) {
+            return "error: No input connection available - keyboard may not be focused on an input field"
+        }
+
+        return if (keyboardIME.clearText()) {
+            "success: Text cleared via keyboard"
+        } else {
+            "error: Failed to clear text via keyboard"
+        }
+    }
+
+    private fun performKeyboardKey(values: ContentValues): String {
+        val keyboardIME = DroidrunKeyboardIME.getInstance()
+            ?: return "error: DroidrunKeyboardIME not active or available"
+
+        if (!keyboardIME.hasInputConnection()) {
+            return "error: No input connection available - keyboard may not be focused on an input field"
+        }
+
+        val keyCode = values.getAsInteger("key_code")
+            ?: return "error: No key_code provided"
+
+        return if (keyboardIME.sendKeyEventDirect(keyCode)) {
+            "success: Key event sent via keyboard - code: $keyCode"
+        } else {
+            "error: Failed to send key event via keyboard"
+        }
+    }
+
 
     private fun createSuccessResponse(data: String): String {
         return JSONObject().apply {
