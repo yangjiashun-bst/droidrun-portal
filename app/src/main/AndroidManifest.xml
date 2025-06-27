@@ -25,11 +25,6 @@
         android:theme="@style/Theme.Droidrun"
         tools:targetApi="31">
 
-        <provider
-            android:name=".DroidrunContentProvider"
-            android:authorities="com.droidrun.portal"
-            android:enabled="true"
-            android:exported="true" />
 
         <service
             android:name=".DroidrunAccessibilityService"
@@ -44,28 +39,13 @@
                 android:resource="@xml/accessibility_service_config" />
         </service>
 
-        <activity
-            android:name=".MainActivity"
+        <provider
+            android:name=".DroidrunContentProvider"
+            android:authorities="com.droidrun.portal"
+            android:enabled="true"
             android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
+        </provider>
 
-        <!--<service
-            android:name=".DroidrunPortalService"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService" />
-            </intent-filter>
-            <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/accessibility_service_config" />
-        </service>-->
-
-        <!-- Keyboard Input Method Service -->
         <service
             android:name=".DroidrunKeyboardIME"
             android:label="@string/keyboard_name"
@@ -79,13 +59,15 @@
                 android:resource="@xml/method" />
         </service>
 
-        <receiver
-            android:name=".PortalBroadcastReceiver"
+        <activity
+            android:name=".MainActivity"
             android:exported="true">
             <intent-filter>
-                <action android:name="com.droidrun.portal.DROIDRUN_INPUT_B64"/>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </receiver>
+        </activity>
+
     </application>
 
 </manifest>
