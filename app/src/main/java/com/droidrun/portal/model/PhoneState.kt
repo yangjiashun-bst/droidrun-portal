@@ -1,4 +1,9 @@
 package com.droidrun.portal.model
 
-class PhoneState {
-}
+import android.view.accessibility.AccessibilityNodeInfo
+
+data class PhoneState (
+    val focusedElement: AccessibilityNodeInfo?,
+    val keyboardVisible: Boolean,
+    val packageName: String?
+)

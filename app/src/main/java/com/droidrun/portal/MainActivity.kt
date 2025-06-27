@@ -50,43 +50,57 @@ class MainActivity : AppCompatActivity() {
         // Intent action for updating overlay offset
         const val ACTION_UPDATE_OVERLAY_OFFSET = "com.droidrun.portal.UPDATE_OVERLAY_OFFSET"
         const val EXTRA_OVERLAY_OFFSET = "overlay_offset"
+        
+        // Intent action for toggling overlay via ADB
+        const val ACTION_TOGGLE_OVERLAY_ADB = "com.droidrun.portal.TOGGLE_OVERLAY_ADB"
+        const val EXTRA_OVERLAY_VISIBLE_ADB = "overlay_visible_adb"
     }
     
     // Broadcast receiver to get element data response
     private val elementDataReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             Log.e("DROIDRUN_MAIN", "Received broadcast: ${intent.action}")
-            if (intent.action == DroidrunPortalService.ACTION_ELEMENTS_RESPONSE) {
-                // Handle element data response
-                val data = intent.getStringExtra(DroidrunPortalService.EXTRA_ELEMENTS_DATA)
-                if (data != null) {
-                    Log.e("DROIDRUN_MAIN", "Received element data: ${data.substring(0, Math.min(100, data.length))}...")
+            
+            when (intent.action) {
+                DroidrunPortalService.ACTION_ELEMENTS_RESPONSE -> {
+                    // Handle element data response
+                    val data = intent.getStringExtra(DroidrunPortalService.EXTRA_ELEMENTS_DATA)
+                    if (data != null) {
+                        Log.e("DROIDRUN_MAIN", "Received element data: ${data.substring(0, Math.min(100, data.length))}...")
+                        
+                        // Update UI with the data
+                        statusText.text = "Received data: ${data.length} characters"
+                        responseText.text = data // Display the full JSON string
+                        Toast.makeText(context, "Data received successfully!", Toast.LENGTH_SHORT).show()
+                    }
                     
-                    // Update UI with the data
-                    statusText.text = "Received data: ${data.length} characters"
-                    responseText.text = data // Display the full JSON string
-                    Toast.makeText(context, "Data received successfully!", Toast.LENGTH_SHORT).show()
+                    // Handle retrigger response
+                    val retriggerStatus = intent.getStringExtra("retrigger_status")
+                    if (retriggerStatus != null) {
+                        val count = intent.getIntExtra("elements_count", 0)
+                        statusText.text = "Elements refreshed: $count UI elements restored"
+                        Toast.makeText(context, "Refresh successful: $count elements", Toast.LENGTH_SHORT).show()
+                    }
+                    
+                    // Handle overlay toggle status
+                    if (intent.hasExtra("overlay_status")) {
+                        val overlayVisible = intent.getBooleanExtra("overlay_status", true)
+                        toggleOverlay.isChecked = overlayVisible
+                    }
+                    
+                    // Handle position offset response
+                    if (intent.hasExtra("current_offset")) {
+                        val currentOffset = intent.getIntExtra("current_offset", DEFAULT_OFFSET)
+                        updateOffsetSlider(currentOffset)
+                        updateOffsetInputField(currentOffset)
+                    }
                 }
-                
-                // Handle retrigger response
-                val retriggerStatus = intent.getStringExtra("retrigger_status")
-                if (retriggerStatus != null) {
-                    val count = intent.getIntExtra("elements_count", 0)
-                    statusText.text = "Elements refreshed: $count UI elements restored"
-                    Toast.makeText(context, "Refresh successful: $count elements", Toast.LENGTH_SHORT).show()
-                }
-                
-                // Handle overlay toggle status
-                if (intent.hasExtra("overlay_status")) {
-                    val overlayVisible = intent.getBooleanExtra("overlay_status", true)
-                    toggleOverlay.isChecked = overlayVisible
-                }
-                
-                // Handle position offset response
-                if (intent.hasExtra("current_offset")) {
-                    val currentOffset = intent.getIntExtra("current_offset", DEFAULT_OFFSET)
-                    updateOffsetSlider(currentOffset)
-                    updateOffsetInputField(currentOffset)
+                ACTION_TOGGLE_OVERLAY_ADB -> {
+                    // Handle ADB toggle command
+                    val shouldShow = intent.getBooleanExtra(EXTRA_OVERLAY_VISIBLE_ADB, false)
+                    toggleOverlay.isChecked = shouldShow
+                    toggleOverlayVisibility(shouldShow)
+                    Log.e("DROIDRUN_MAIN", "Toggled overlay via ADB: $shouldShow")
                 }
             }
         }
@@ -114,9 +128,12 @@ class MainActivity : AppCompatActivity() {
         setupOffsetSlider()
         setupOffsetInput()
         
-        // Register for responses
-        val filter = IntentFilter(DroidrunPortalService.ACTION_ELEMENTS_RESPONSE)
-        registerReceiver(elementDataReceiver, filter, RECEIVER_EXPORTED)
+        // Register for responses with additional filter for ADB toggle
+        val filter = IntentFilter().apply {
+            addAction(DroidrunPortalService.ACTION_ELEMENTS_RESPONSE)
+            addAction(ACTION_TOGGLE_OVERLAY_ADB)
+        }
+        registerReceiver(elementDataReceiver, filter, Context.RECEIVER_EXPORTED)
         
         fetchButton.setOnClickListener {
             fetchElementData()

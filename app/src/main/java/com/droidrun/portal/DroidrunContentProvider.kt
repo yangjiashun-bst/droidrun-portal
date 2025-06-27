@@ -4,10 +4,12 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.content.ContentProvider
 import android.content.ContentValues
+import android.content.Context
 import android.content.UriMatcher
 import android.database.Cursor
 import android.database.MatrixCursor
 import android.graphics.Path
+import android.graphics.Rect
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
@@ -22,6 +24,10 @@ import java.io.FileOutputStream
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import androidx.core.net.toUri
+import android.os.Bundle
+import android.util.Base64
+import android.view.Display
+import com.droidrun.portal.model.PhoneState
 
 class DroidrunContentProvider : ContentProvider() {
     companion object {
@@ -72,8 +78,8 @@ class DroidrunContentProvider : ContentProvider() {
             val action = command.getString("action")
 
             val result = when (action) {
-                "get_a11y_tree" -> getAccessibilityTree()
-                //"screenshot" -> takeScreenshot()
+                "a11y_tree" -> getAccessibilityTree()
+                "phone_state" -> getPhoneState()
                 "ping" -> createSuccessResponse("pong")
                 else -> createErrorResponse("Unknown query action: $action")
             }
@@ -100,6 +106,7 @@ class DroidrunContentProvider : ContentProvider() {
             val action = values.getAsString("action") ?: return "content://$AUTHORITY/result?status=error&message=No action specified".toUri()
 
             val result = when (action) {
+                "text_input" -> performTextInput(values)
                 /*"click" -> performClick(values)
                 "swipe" -> performSwipe(values)
                 "key_press" -> performKeyPress(values)
@@ -123,13 +130,11 @@ class DroidrunContentProvider : ContentProvider() {
     private fun getAccessibilityTree(): String {
         val accessibilityService = DroidrunAccessibilityService.getInstance()
             ?: return createErrorResponse("Accessibility service not available")
-
         return try {
-            val rootNode = accessibilityService.rootInActiveWindow
-                ?: return createErrorResponse("No active window")
 
-            val treeJson = buildAccessibilityTree(rootNode)
-            rootNode.recycle()
+            val treeJson = accessibilityService.getVisibleElements().map { element ->
+                buildElementNodeJson(element)
+            }
 
             createSuccessResponse(treeJson.toString())
         } catch (e: Exception) {
@@ -138,45 +143,97 @@ class DroidrunContentProvider : ContentProvider() {
         }
     }
 
-    private fun buildAccessibilityTree(node: AccessibilityNodeInfo): JSONObject {
-        val nodeJson = JSONObject().apply {
-            put("className", node.className?.toString() ?: "")
-            put("text", node.text?.toString() ?: "")
-            put("contentDescription", node.contentDescription?.toString() ?: "")
-            put("resourceId", node.viewIdResourceName ?: "")
-            put("packageName", node.packageName?.toString() ?: "")
-            put("isClickable", node.isClickable)
-            put("isScrollable", node.isScrollable)
-            put("isEnabled", node.isEnabled)
-            put("isSelected", node.isSelected)
-            put("isFocused", node.isFocused)
+    private fun buildElementNodeJson(element: ElementNode): JSONObject {
+        return JSONObject().apply {
+            put("index", element.overlayIndex)
+            put("resourceId", element.nodeInfo.viewIdResourceName ?: "")
+            put("className", element.className)
+            put("text", element.text)
+            put("bounds", "${element.rect.left}, ${element.rect.top}, ${element.rect.right}, ${element.rect.bottom}")
 
-            // Bounds
-            val bounds = android.graphics.Rect()
-            node.getBoundsInScreen(bounds)
-            put("bounds", JSONObject().apply {
-                put("left", bounds.left)
-                put("top", bounds.top)
-                put("right", bounds.right)
-                put("bottom", bounds.bottom)
-            })
-
-            // Children
-            val childrenArray = mutableListOf<JSONObject>()
-            for (i in 0 until node.childCount) {
-                val child = node.getChild(i)
-                if (child != null) {
-                    childrenArray.add(buildAccessibilityTree(child))
-                    child.recycle()
-                }
+            // Recursively build children JSON
+            val childrenArray = org.json.JSONArray()
+            element.children.forEach { child ->
+                childrenArray.put(buildElementNodeJson(child))
             }
             put("children", childrenArray)
         }
-
-        return nodeJson
     }
 
 
+    private fun getPhoneState(): String {
+        val accessibilityService = DroidrunAccessibilityService.getInstance()
+            ?: return createErrorResponse("Accessibility service not available")
+        return try {
+            val phoneState = buildPhoneStateJson(accessibilityService.getPhoneState())
+            createSuccessResponse(phoneState.toString())
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to get accessibility tree", e)
+            createErrorResponse("Failed to get accessibility tree: ${e.message}")
+        }
+    }
+
+    private fun buildPhoneStateJson(phoneState: PhoneState) =
+        JSONObject().apply {
+            put("packageName", phoneState.packageName)
+            put("keyboardVisible", phoneState.keyboardVisible)
+            put("focusedElement", JSONObject().apply {
+                val rect = Rect()
+                put("text", phoneState.focusedElement?.text)
+                put("className", phoneState.focusedElement?.className)
+                put("resourceId", phoneState.focusedElement?.viewIdResourceName ?: "")
+            })
+        }
+
+    private fun performTextInput(values: ContentValues): String {
+        val accessibilityService = DroidrunAccessibilityService.getInstance()
+            ?: return "error: Accessibility service not available"
+        // Get the hex-encoded text
+        val hexText = values.getAsString("hex_text")
+            ?: return "error: No hex_text provided"
+
+        // Check if we should append (default is false = replace)
+        val append = values.getAsBoolean("append") ?: false
+
+        // Decode hex to actual text
+        val text = try {
+            hexText.chunked(2).map { it.toInt(16).toChar() }.joinToString("")
+        } catch (e: Exception) {
+            return "error: Invalid hex encoding: ${e.message}"
+        }
+
+        // Find the currently focused element
+        val focusedNode = accessibilityService.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+            ?: return "error: No focused input element found"
+
+        return try {
+            val finalText = if (append) {
+                // Get existing text and append to it
+                val existingText = focusedNode.text?.toString() ?: ""
+                existingText + text
+            } else {
+                // Just use the new text (replace)
+                text
+            }
+
+            // Set the text using ACTION_SET_TEXT
+            val arguments = Bundle().apply {
+                putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, finalText)
+            }
+            val result = focusedNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
+            focusedNode.recycle()
+            
+            if (result) {
+                val mode = if (append) "appended" else "set"
+                "success: Text $mode - '$text'"
+            } else {
+                "error: Text input failed"
+            }
+        } catch (e: Exception) {
+            focusedNode.recycle()
+            "error: Text input exception: ${e.message}"
+        }
+    }
 
     private fun createSuccessResponse(data: String): String {
         return JSONObject().apply {
