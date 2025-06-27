@@ -92,7 +92,7 @@ class DroidrunContentProvider : ContentProvider() {
             val action = values.getAsString("action") ?: return "content://$AUTHORITY/result?status=error&message=No action specified".toUri()
 
             val result = when (action) {
-                "keyboard_input" -> performKeyboardInput(values)
+                "keyboard_input" -> performKeyboardInputBase64(values)
                 "keyboard_clear" -> performKeyboardClear()
                 "keyboard_key" -> performKeyboardKey(values)
                 /*"click" -> performClick(values)
@@ -223,7 +223,7 @@ class DroidrunContentProvider : ContentProvider() {
         }
     }
 
-    private fun performKeyboardInput(values: ContentValues): String {
+    private fun performKeyboardInputBase64(values: ContentValues): String {
         val keyboardIME = DroidrunKeyboardIME.getInstance()
             ?: return "error: DroidrunKeyboardIME not active or available"
 
@@ -232,18 +232,19 @@ class DroidrunContentProvider : ContentProvider() {
             return "error: No input connection available - keyboard may not be focused on an input field"
         }
 
-        val hexText = values.getAsString("hex_text")
-            ?: return "error: No hex_text provided"
+        val base64Text = values.getAsString("base64_text")
+            ?: return "error: No base64_text provided"
 
         return try {
-            if (keyboardIME.inputHexText(hexText)) {
-                val decodedText = hexText.chunked(2).map { it.toInt(16).toChar() }.joinToString("")
-                "success: Hex text input via keyboard - '$decodedText'"
+            if (keyboardIME.inputB64Text(base64Text)) {
+                val decoded = android.util.Base64.decode(base64Text, android.util.Base64.DEFAULT)
+                val decodedText = String(decoded, Charsets.UTF_8)
+                "success: Base64 text input via keyboard - '$decodedText'"
             } else {
-                "error: Failed to input hex text via keyboard"
+                "error: Failed to input base64 text via keyboard"
             }
         } catch (e: Exception) {
-            "error: Invalid hex encoding: ${e.message}"
+            "error: Invalid base64 encoding: ${e.message}"
         }
     }
 

@@ -44,6 +44,20 @@ class DroidrunKeyboardIME : InputMethodService() {
         }
     }
 
+    /**
+     * Direct method to input text from Base64 without using broadcasts
+     */
+    fun inputB64Text(base64Text: String): Boolean {
+        return try {
+            val decoded = Base64.decode(base64Text, Base64.DEFAULT)
+            val text = String(decoded, Charsets.UTF_8)
+            inputText(text)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error decoding base64 for direct input", e)
+            false
+        }
+    }
+
     fun inputHexText(hexText: String): Boolean {
         return try {
             // Remove any whitespace or separators
