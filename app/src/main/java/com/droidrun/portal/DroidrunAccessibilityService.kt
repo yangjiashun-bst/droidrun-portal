@@ -260,19 +260,6 @@ class DroidrunAccessibilityService : AccessibilityService() {
 
     fun getOverlayOffset(): Int = configManager.overlayOffset
 
-    fun retriggerElements(): Boolean {
-        return try {
-            mainHandler.post {
-                refreshVisibleElements()
-                Log.d(TAG, "Elements retriggered manually")
-            }
-            true
-        } catch (e: Exception) {
-            Log.e(TAG, "Error retriggering elements: ${e.message}", e)
-            false
-        }
-    }
-
     fun getVisibleElements(): MutableList<ElementNode> {
         return getVisibleElementsInternal()
     }

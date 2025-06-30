@@ -30,7 +30,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var responseText: TextView
     private lateinit var toggleOverlay: SwitchMaterial
     private lateinit var fetchButton: MaterialButton
-    private lateinit var retriggerButton: MaterialButton
     private lateinit var offsetSlider: SeekBar
     private lateinit var offsetInput: TextInputEditText
     private lateinit var offsetInputLayout: TextInputLayout
@@ -59,7 +58,6 @@ class MainActivity : AppCompatActivity() {
         statusText = findViewById(R.id.status_text)
         responseText = findViewById(R.id.response_text)
         fetchButton = findViewById(R.id.fetch_button)
-        retriggerButton = findViewById(R.id.retrigger_button)
         toggleOverlay = findViewById(R.id.toggle_overlay)
         offsetSlider = findViewById(R.id.offset_slider)
         offsetInput = findViewById(R.id.offset_input)
@@ -76,11 +74,7 @@ class MainActivity : AppCompatActivity() {
         fetchButton.setOnClickListener {
             fetchElementData()
         }
-        
-        retriggerButton.setOnClickListener {
-            retriggerElements()
-        }
-        
+
         toggleOverlay.setOnCheckedChangeListener { _, isChecked ->
             toggleOverlayVisibility(isChecked)
         }
@@ -338,31 +332,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
     
-    private fun retriggerElements() {
-        try {
-            val accessibilityService = DroidrunAccessibilityService.getInstance()
-            if (accessibilityService != null) {
-                statusText.text = "Refreshing UI elements..."
-                
-                val success = accessibilityService.retriggerElements()
-                if (success) {
-                    statusText.text = "UI elements refreshed successfully"
-                    Toast.makeText(this, "Elements refreshed!", Toast.LENGTH_SHORT).show()
-                    Log.d("DROIDRUN_MAIN", "Elements retriggered successfully")
-                } else {
-                    statusText.text = "Failed to refresh elements"
-                    Log.e("DROIDRUN_MAIN", "Failed to retrigger elements")
-                }
-            } else {
-                statusText.text = "Accessibility service not available"
-                Log.e("DROIDRUN_MAIN", "Accessibility service not available for retrigger")
-            }
-        } catch (e: Exception) {
-            statusText.text = "Error refreshing elements: ${e.message}"
-            Log.e("DROIDRUN_MAIN", "Error retriggering elements: ${e.message}")
-        }
-    }
-    
+
     private fun fetchPhoneStateData() {
         try {
             statusText.text = "Fetching phone state..."
