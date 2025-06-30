@@ -1,14 +1,11 @@
 package com.droidrun.portal
 
 import android.content.Context
-import android.content.Context.RECEIVER_EXPORTED
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
-import android.content.BroadcastReceiver
-import android.content.IntentFilter
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.inputmethod.EditorInfo
@@ -21,6 +18,11 @@ import com.google.android.material.textfield.TextInputLayout
 import android.provider.Settings
 import android.widget.ImageView
 import android.view.View
+import android.os.Handler
+import android.os.Looper
+import android.net.Uri
+import android.database.Cursor
+import org.json.JSONObject
 
 class MainActivity : AppCompatActivity() {
     
@@ -28,7 +30,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var responseText: TextView
     private lateinit var toggleOverlay: SwitchMaterial
     private lateinit var fetchButton: MaterialButton
-    private lateinit var retriggerButton: MaterialButton
     private lateinit var offsetSlider: SeekBar
     private lateinit var offsetInput: TextInputEditText
     private lateinit var offsetInputLayout: TextInputLayout
@@ -39,6 +40,7 @@ class MainActivity : AppCompatActivity() {
     
     // Flag to prevent infinite update loops
     private var isProgrammaticUpdate = false
+    private val mainHandler = Handler(Looper.getMainLooper())
     
     // Constants for the position offset slider
     companion object {
@@ -46,50 +48,6 @@ class MainActivity : AppCompatActivity() {
         private const val MIN_OFFSET = -256
         private const val MAX_OFFSET = 256
         private const val SLIDER_RANGE = MAX_OFFSET - MIN_OFFSET
-        
-        // Intent action for updating overlay offset
-        const val ACTION_UPDATE_OVERLAY_OFFSET = "com.droidrun.portal.UPDATE_OVERLAY_OFFSET"
-        const val EXTRA_OVERLAY_OFFSET = "overlay_offset"
-    }
-    
-    // Broadcast receiver to get element data response
-    private val elementDataReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) {
-            Log.e("DROIDRUN_MAIN", "Received broadcast: ${intent.action}")
-            if (intent.action == DroidrunPortalService.ACTION_ELEMENTS_RESPONSE) {
-                // Handle element data response
-                val data = intent.getStringExtra(DroidrunPortalService.EXTRA_ELEMENTS_DATA)
-                if (data != null) {
-                    Log.e("DROIDRUN_MAIN", "Received element data: ${data.substring(0, Math.min(100, data.length))}...")
-                    
-                    // Update UI with the data
-                    statusText.text = "Received data: ${data.length} characters"
-                    responseText.text = data // Display the full JSON string
-                    Toast.makeText(context, "Data received successfully!", Toast.LENGTH_SHORT).show()
-                }
-                
-                // Handle retrigger response
-                val retriggerStatus = intent.getStringExtra("retrigger_status")
-                if (retriggerStatus != null) {
-                    val count = intent.getIntExtra("elements_count", 0)
-                    statusText.text = "Elements refreshed: $count UI elements restored"
-                    Toast.makeText(context, "Refresh successful: $count elements", Toast.LENGTH_SHORT).show()
-                }
-                
-                // Handle overlay toggle status
-                if (intent.hasExtra("overlay_status")) {
-                    val overlayVisible = intent.getBooleanExtra("overlay_status", true)
-                    toggleOverlay.isChecked = overlayVisible
-                }
-                
-                // Handle position offset response
-                if (intent.hasExtra("current_offset")) {
-                    val currentOffset = intent.getIntExtra("current_offset", DEFAULT_OFFSET)
-                    updateOffsetSlider(currentOffset)
-                    updateOffsetInputField(currentOffset)
-                }
-            }
-        }
     }
     
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -100,7 +58,6 @@ class MainActivity : AppCompatActivity() {
         statusText = findViewById(R.id.status_text)
         responseText = findViewById(R.id.response_text)
         fetchButton = findViewById(R.id.fetch_button)
-        retriggerButton = findViewById(R.id.retrigger_button)
         toggleOverlay = findViewById(R.id.toggle_overlay)
         offsetSlider = findViewById(R.id.offset_slider)
         offsetInput = findViewById(R.id.offset_input)
@@ -114,18 +71,10 @@ class MainActivity : AppCompatActivity() {
         setupOffsetSlider()
         setupOffsetInput()
         
-        // Register for responses
-        val filter = IntentFilter(DroidrunPortalService.ACTION_ELEMENTS_RESPONSE)
-        registerReceiver(elementDataReceiver, filter, RECEIVER_EXPORTED)
-        
         fetchButton.setOnClickListener {
             fetchElementData()
         }
-        
-        retriggerButton.setOnClickListener {
-            retriggerElements()
-        }
-        
+
         toggleOverlay.setOnCheckedChangeListener { _, isChecked ->
             toggleOverlayVisibility(isChecked)
         }
@@ -135,14 +84,33 @@ class MainActivity : AppCompatActivity() {
             openAccessibilitySettings()
         }
         
-        // Check initial accessibility status
+        // Check initial accessibility status and sync UI
         updateAccessibilityStatusIndicator()
+        syncUIWithAccessibilityService()
     }
     
     override fun onResume() {
         super.onResume()
         // Update the accessibility status indicator when app resumes
         updateAccessibilityStatusIndicator()
+        syncUIWithAccessibilityService()
+    }
+    
+    private fun syncUIWithAccessibilityService() {
+        val accessibilityService = DroidrunAccessibilityService.getInstance()
+        if (accessibilityService != null) {
+            // Sync overlay toggle
+            toggleOverlay.isChecked = accessibilityService.isOverlayVisible()
+            
+            // Sync offset controls
+            val currentOffset = accessibilityService.getOverlayOffset()
+            updateOffsetSlider(currentOffset)
+            updateOffsetInputField(currentOffset)
+            
+            statusText.text = "Connected to accessibility service"
+        } else {
+            statusText.text = "Accessibility service not available"
+        }
     }
     
     private fun setupOffsetSlider() {
@@ -281,75 +249,137 @@ class MainActivity : AppCompatActivity() {
     
     private fun updateOverlayOffset(offsetValue: Int) {
         try {
-            val intent = Intent(ACTION_UPDATE_OVERLAY_OFFSET).apply {
-                putExtra(EXTRA_OVERLAY_OFFSET, offsetValue)
+            val accessibilityService = DroidrunAccessibilityService.getInstance()
+            if (accessibilityService != null) {
+                val success = accessibilityService.setOverlayOffset(offsetValue)
+                if (success) {
+                    statusText.text = "Element offset updated to: $offsetValue"
+                    Log.d("DROIDRUN_MAIN", "Offset updated successfully: $offsetValue")
+                } else {
+                    statusText.text = "Failed to update offset"
+                    Log.e("DROIDRUN_MAIN", "Failed to update offset: $offsetValue")
+                }
+            } else {
+                statusText.text = "Accessibility service not available"
+                Log.e("DROIDRUN_MAIN", "Accessibility service not available for offset update")
             }
-            sendBroadcast(intent)
-            
-            statusText.text = "Updating element offset to: $offsetValue"
-            Log.e("DROIDRUN_MAIN", "Sent offset update: $offsetValue")
         } catch (e: Exception) {
             statusText.text = "Error updating offset: ${e.message}"
-            Log.e("DROIDRUN_MAIN", "Error sending offset update: ${e.message}")
-        }
-    }
-    
-    override fun onDestroy() {
-        super.onDestroy()
-        try {
-            unregisterReceiver(elementDataReceiver)
-        } catch (e: Exception) {
-            Log.e("DROIDRUN_MAIN", "Error unregistering receiver: ${e.message}")
+            Log.e("DROIDRUN_MAIN", "Error updating offset: ${e.message}")
         }
     }
     
     private fun fetchElementData() {
         try {
-            // Send broadcast to request elements
-            val intent = Intent(DroidrunPortalService.ACTION_GET_ELEMENTS)
-            sendBroadcast(intent)
+            statusText.text = "Fetching combined state data..."
             
-            statusText.text = "Request sent, awaiting response..."
-            Log.e("DROIDRUN_MAIN", "Broadcast sent with action: ${DroidrunPortalService.ACTION_GET_ELEMENTS}")
+            // Use ContentProvider to get combined state (a11y tree + phone state)
+            val uri = Uri.parse("content://com.droidrun.portal/state")
+            
+            val cursor = contentResolver.query(
+                uri,
+                null,
+                null,
+                null,
+                null
+            )
+            
+            cursor?.use {
+                if (it.moveToFirst()) {
+                    val result = it.getString(0)
+                    val jsonResponse = JSONObject(result)
+                    
+                    if (jsonResponse.getString("status") == "success") {
+                        val data = jsonResponse.getString("data")
+                        responseText.text = data
+                        statusText.text = "Combined state data received: ${data.length} characters"
+                        Toast.makeText(this, "Combined state received successfully!", Toast.LENGTH_SHORT).show()
+                        
+                        Log.d("DROIDRUN_MAIN", "Combined state data received: ${data.substring(0, Math.min(100, data.length))}...")
+                    } else {
+                        val error = jsonResponse.getString("error")
+                        statusText.text = "Error: $error"
+                        responseText.text = error
+                    }
+                }
+            }
+            
         } catch (e: Exception) {
-            statusText.text = "Error sending request: ${e.message}"
-            Log.e("DROIDRUN_MAIN", "Error sending broadcast: ${e.message}")
+            statusText.text = "Error fetching data: ${e.message}"
+            Log.e("DROIDRUN_MAIN", "Error fetching combined state data: ${e.message}")
         }
     }
     
     private fun toggleOverlayVisibility(visible: Boolean) {
         try {
-            val intent = Intent(DroidrunPortalService.ACTION_TOGGLE_OVERLAY).apply {
-                putExtra(DroidrunPortalService.EXTRA_OVERLAY_VISIBLE, visible)
+            val accessibilityService = DroidrunAccessibilityService.getInstance()
+            if (accessibilityService != null) {
+                val success = accessibilityService.setOverlayVisible(visible)
+                if (success) {
+                    statusText.text = "Visualization overlays ${if (visible) "enabled" else "disabled"}"
+                    Log.d("DROIDRUN_MAIN", "Overlay visibility toggled to: $visible")
+                } else {
+                    statusText.text = "Failed to toggle overlay"
+                    Log.e("DROIDRUN_MAIN", "Failed to toggle overlay visibility")
+                }
+            } else {
+                statusText.text = "Accessibility service not available"
+                Log.e("DROIDRUN_MAIN", "Accessibility service not available for overlay toggle")
             }
-            sendBroadcast(intent)
-            
-            statusText.text = "Visualization overlays ${if (visible) "enabled" else "disabled"}"
-            Log.e("DROIDRUN_MAIN", "Toggled overlay visibility to: $visible")
         } catch (e: Exception) {
             statusText.text = "Error changing visibility: ${e.message}"
             Log.e("DROIDRUN_MAIN", "Error toggling overlay: ${e.message}")
         }
     }
     
-    private fun retriggerElements() {
+
+    private fun fetchPhoneStateData() {
         try {
-            // Send broadcast to request element retrigger
-            val intent = Intent(DroidrunPortalService.ACTION_RETRIGGER_ELEMENTS)
-            sendBroadcast(intent)
+            statusText.text = "Fetching phone state..."
             
-            statusText.text = "Refreshing UI elements..."
-            Log.e("DROIDRUN_MAIN", "Broadcast sent with action: ${DroidrunPortalService.ACTION_RETRIGGER_ELEMENTS}")
-            Toast.makeText(this, "Refreshing elements...", Toast.LENGTH_SHORT).show()
+            // Use ContentProvider to get phone state
+            val uri = Uri.parse("content://com.droidrun.portal/")
+            val command = JSONObject().apply {
+                put("action", "phone_state")
+            }
+            
+            val cursor = contentResolver.query(
+                uri,
+                null,
+                command.toString(),
+                null,
+                null
+            )
+            
+            cursor?.use {
+                if (it.moveToFirst()) {
+                    val result = it.getString(0)
+                    val jsonResponse = JSONObject(result)
+                    
+                    if (jsonResponse.getString("status") == "success") {
+                        val data = jsonResponse.getString("data")
+                        responseText.text = data
+                        statusText.text = "Phone state received: ${data.length} characters"
+                        Toast.makeText(this, "Phone state received successfully!", Toast.LENGTH_SHORT).show()
+                        
+                        Log.d("DROIDRUN_MAIN", "Phone state received: ${data.substring(0, Math.min(100, data.length))}...")
+                    } else {
+                        val error = jsonResponse.getString("error")
+                        statusText.text = "Error: $error"
+                        responseText.text = error
+                    }
+                }
+            }
+            
         } catch (e: Exception) {
-            statusText.text = "Error refreshing elements: ${e.message}"
-            Log.e("DROIDRUN_MAIN", "Error sending retrigger broadcast: ${e.message}")
+            statusText.text = "Error fetching phone state: ${e.message}"
+            Log.e("DROIDRUN_MAIN", "Error fetching phone state: ${e.message}")
         }
     }
     
     // Check if the accessibility service is enabled
     private fun isAccessibilityServiceEnabled(): Boolean {
-        val accessibilityServiceName = packageName + "/" + DroidrunPortalService::class.java.canonicalName
+        val accessibilityServiceName = packageName + "/" + DroidrunAccessibilityService::class.java.canonicalName
         
         try {
             val enabledServices = Settings.Secure.getString(

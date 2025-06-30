@@ -192,13 +192,13 @@ class OverlayManager(private val context: Context) {
         refreshOverlay()
     }
 
-    fun addElement(rect: Rect, type: String, text: String, depth: Int = 0, color: Int = Color.GREEN) {
+    fun addElement(rect: Rect, type: String, text: String, depth: Int = 0, color: Int = Color.GREEN, index: Int? = null) {
         // Apply position correction to the rectangle
         val correctedRect = correctRectPosition(rect)
-        val index = elementIndexCounter++
+        val elementIndex = index ?: elementIndexCounter++
         // Assign a color from the color scheme based on the index
-        val colorFromScheme = COLOR_SCHEME[index % COLOR_SCHEME.size]
-        elementRects.add(ElementInfo(correctedRect, type, text, depth, colorFromScheme, index))
+        val colorFromScheme = COLOR_SCHEME[elementIndex % COLOR_SCHEME.size]
+        elementRects.add(ElementInfo(correctedRect, type, text, depth, colorFromScheme, elementIndex))
         // Don't refresh on each add to avoid excessive redraws with many elements
     }
     
@@ -222,106 +222,9 @@ class OverlayManager(private val context: Context) {
         }
     }
 
-    // Update an existing element without changing its index
-    fun updateElement(rect: Rect, text: String, color: Int = Color.GREEN) {
-        val correctedRect = correctRectPosition(rect)
-        
-        // Try to find the existing element first
-        val existingElement = elementRects.find { element ->
-            // Check if this is the same element by matching text and checking for significant overlap
-            if (element.text == text) {
-                val overlapRect = Rect(element.rect)
-                if (overlapRect.intersect(correctedRect)) {
-                    val overlapArea = overlapRect.width() * overlapRect.height()
-                    val elementArea = element.rect.width() * element.rect.height()
-                    val inputArea = correctedRect.width() * correctedRect.height()
-                    val minArea = minOf(elementArea, inputArea)
-                    
-                    // If rectangles have significant overlap (>50%), it's likely the same element
-                    minArea > 0 && overlapArea.toFloat() / minArea > 0.5f
-                } else {
-                    false
-                }
-            } else {
-                false
-            }
-        }
-        
-        if (existingElement != null) {
-            // Update the existing element's properties but keep its index
-            val index = existingElement.index
-            val elementIndex = elementRects.indexOf(existingElement)
-            if (elementIndex >= 0) {
-                // Use the existing color to maintain color consistency for the same element
-                elementRects[elementIndex] = ElementInfo(
-                    rect = correctedRect,
-                    type = existingElement.type,
-                    text = text,
-                    depth = existingElement.depth,
-                    color = existingElement.color,
-                    index = index
-                )
-            }
-        } else {
-            // If element doesn't exist, add it as a new element
-            val index = elementIndexCounter++
-            // Assign a color from the color scheme based on the index
-            val colorFromScheme = COLOR_SCHEME[index % COLOR_SCHEME.size]
-            elementRects.add(ElementInfo(
-                rect = correctedRect,
-                type = "UpdatedElement",
-                text = text,
-                depth = 0,
-                color = colorFromScheme,
-                index = index
-            ))
-        }
-    }
-    
     // Get the count of elements in the overlay
     fun getElementCount(): Int {
         return elementRects.size
-    }
-
-    // Modified getElementIndex with more lenient matching
-    fun getElementIndex(rect: Rect, text: String): Int {
-        // Apply the same position correction that was applied when adding the element
-        val correctedRect = correctRectPosition(rect)
-        
-        // First try to find an exact match with the corrected rectangle
-        val exactMatch = elementRects.find { 
-            it.rect == correctedRect && it.text == text 
-        }
-        
-        if (exactMatch != null) {
-            return exactMatch.index
-        }
-        
-        // Try looser matching with lower overlap threshold
-        val similarElement = elementRects.find { element ->
-            val rectOverlaps = Rect.intersects(element.rect, correctedRect)
-            
-            // More lenient text matching
-            val textMatches = element.text.trim() == text.trim()
-            
-            if (rectOverlaps) {
-                val overlapRect = Rect(element.rect)
-                overlapRect.intersect(correctedRect)
-                val overlapArea = overlapRect.width() * overlapRect.height()
-                val elementArea = element.rect.width() * element.rect.height()
-                val inputArea = correctedRect.width() * correctedRect.height()
-                val minArea = minOf(elementArea, inputArea)
-                
-                val hasSignificantOverlap = minArea > 0 && 
-                    overlapArea.toFloat() / minArea > OVERLAP_THRESHOLD
-                
-                hasSignificantOverlap && textMatches
-            } else {
-                false
-            }
-        }
-        
-        return similarElement?.index ?: -1
     }
 
     inner class OverlayView(context: Context) : FrameLayout(context) {
