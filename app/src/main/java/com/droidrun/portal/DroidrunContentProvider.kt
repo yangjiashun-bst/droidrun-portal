@@ -164,6 +164,7 @@ class DroidrunContentProvider : ContentProvider() {
 
     private fun buildPhoneStateJson(phoneState: PhoneState) =
         JSONObject().apply {
+            put("currentApp", phoneState.appName)
             put("packageName", phoneState.packageName)
             put("keyboardVisible", phoneState.keyboardVisible)
             put("focusedElement", JSONObject().apply {

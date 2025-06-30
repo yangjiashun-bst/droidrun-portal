@@ -381,8 +381,9 @@ class DroidrunAccessibilityService : AccessibilityService() {
         val focusedNode = findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: findFocus(AccessibilityNodeInfo.FOCUS_ACCESSIBILITY)
         val keyboardVisible = detectKeyboardVisibility()
         val currentPackage = rootInActiveWindow?.packageName?.toString()
+        val appName = getAppName(currentPackage)
 
-        return PhoneState(focusedNode, keyboardVisible, currentPackage)
+        return PhoneState(focusedNode, keyboardVisible, currentPackage, appName)
     }
 
     private fun detectKeyboardVisibility(): Boolean {
@@ -394,6 +395,19 @@ class DroidrunAccessibilityService : AccessibilityService() {
                 return hasInputMethodWindow
             } else { return false }
         } catch (e: Exception) { return false}
+    }
+
+    private fun getAppName(packageName: String?): String? {
+        return try {
+            if (packageName == null) return null
+            
+            val packageManager = packageManager
+            val applicationInfo = packageManager.getApplicationInfo(packageName, 0)
+            packageManager.getApplicationLabel(applicationInfo).toString()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting app name for package $packageName: ${e.message}")
+            null
+        }
     }
 
     // Helper class to maintain global index counter
