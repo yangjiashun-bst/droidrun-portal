@@ -20,10 +20,16 @@ class DroidrunContentProvider : ContentProvider() {
     companion object {
         private const val TAG = "DroidrunContentProvider"
         private const val AUTHORITY = "com.droidrun.portal"
-        private const val COMMANDS = 1
+        private const val A11Y_TREE = 1
+        private const val PHONE_STATE = 2
+        private const val PING = 3
+        private const val KEYBOARD_ACTIONS = 4
 
         private val uriMatcher = UriMatcher(UriMatcher.NO_MATCH).apply {
-            addURI(AUTHORITY, "/", COMMANDS)
+            addURI(AUTHORITY, "a11y_tree", A11Y_TREE)
+            addURI(AUTHORITY, "phone_state", PHONE_STATE)
+            addURI(AUTHORITY, "ping", PING)
+            addURI(AUTHORITY, "keyboard/*", KEYBOARD_ACTIONS)
         }
     }
 
@@ -39,64 +45,46 @@ class DroidrunContentProvider : ContentProvider() {
         selectionArgs: Array<String>?,
         sortOrder: String?
     ): Cursor? {
-        return when (uriMatcher.match(uri)) {
-            COMMANDS -> executeQuery(selection)
-            else -> null
-        }
-    }
-
-    override fun insert(uri: Uri, values: ContentValues?): Uri? {
-        return when (uriMatcher.match(uri)) {
-            COMMANDS -> executeAction(values)
-            else -> null
-        }
-    }
-
-    private fun executeQuery(commandJson: String?): Cursor {
         val cursor = MatrixCursor(arrayOf("result"))
-
-        if (commandJson.isNullOrEmpty()) {
-            cursor.addRow(arrayOf(createErrorResponse("No command provided")))
-            return cursor
-        }
-
+        
         try {
-            val command = JSONObject(commandJson)
-            val action = command.getString("action")
-
-            val result = when (action) {
-                "a11y_tree" -> getAccessibilityTree()
-                "phone_state" -> getPhoneState()
-                "ping" -> createSuccessResponse("pong")
-                else -> createErrorResponse("Unknown query action: $action")
+            val result = when (uriMatcher.match(uri)) {
+                A11Y_TREE -> getAccessibilityTree()
+                PHONE_STATE -> getPhoneState()
+                PING -> createSuccessResponse("pong")
+                else -> createErrorResponse("Unknown endpoint: ${uri.path}")
             }
-
+            
             cursor.addRow(arrayOf(result))
-
-        } catch (e: JSONException) {
-            Log.e(TAG, "Invalid JSON command", e)
-            cursor.addRow(arrayOf(createErrorResponse("Invalid JSON: ${e.message}")))
+            
         } catch (e: Exception) {
             Log.e(TAG, "Query execution failed", e)
             cursor.addRow(arrayOf(createErrorResponse("Execution failed: ${e.message}")))
         }
-
+        
         return cursor
     }
 
-    private fun executeAction(values: ContentValues?): Uri? {
+    override fun insert(uri: Uri, values: ContentValues?): Uri? {
+        return when (uriMatcher.match(uri)) {
+            KEYBOARD_ACTIONS -> executeKeyboardAction(uri, values)
+            else -> "content://$AUTHORITY/result?status=error&message=${Uri.encode("Unsupported insert endpoint: ${uri.path}")}".toUri()
+        }
+    }
+
+    private fun executeKeyboardAction(uri: Uri, values: ContentValues?): Uri? {
         if (values == null) {
             return "content://$AUTHORITY/result?status=error&message=No values provided".toUri()
         }
 
         try {
-            val action = values.getAsString("action") ?: return "content://$AUTHORITY/result?status=error&message=No action specified".toUri()
+            val action = uri.lastPathSegment ?: return "content://$AUTHORITY/result?status=error&message=No action specified".toUri()
 
             val result = when (action) {
-                "keyboard_input" -> performKeyboardInputBase64(values)
-                "keyboard_clear" -> performKeyboardClear()
-                "keyboard_key" -> performKeyboardKey(values)
-                else -> "error: Unknown action: $action"
+                "input" -> performKeyboardInputBase64(values)
+                "clear" -> performKeyboardClear()
+                "key" -> performKeyboardKey(values)
+                else -> "error: Unknown keyboard action: $action"
             }
 
             // Encode result in URI
@@ -107,7 +95,7 @@ class DroidrunContentProvider : ContentProvider() {
             }
 
         } catch (e: Exception) {
-            Log.e(TAG, "Action execution failed", e)
+            Log.e(TAG, "Keyboard action execution failed", e)
             return "content://$AUTHORITY/result?status=error&message=${Uri.encode("Execution failed: ${e.message}")}".toUri()
         }
     }
