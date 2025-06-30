@@ -96,10 +96,6 @@ class DroidrunContentProvider : ContentProvider() {
                 "keyboard_input" -> performKeyboardInputBase64(values)
                 "keyboard_clear" -> performKeyboardClear()
                 "keyboard_key" -> performKeyboardKey(values)
-                /*"click" -> performClick(values)
-                "swipe" -> performSwipe(values)
-                "key_press" -> performKeyPress(values)
-                "start_app" -> startApp(values)*/
                 else -> "error: Unknown action: $action"
             }
 
