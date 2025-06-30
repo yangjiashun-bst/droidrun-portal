@@ -277,18 +277,15 @@ class MainActivity : AppCompatActivity() {
     
     private fun fetchElementData() {
         try {
-            statusText.text = "Fetching element data..."
+            statusText.text = "Fetching combined state data..."
             
-            // Use ContentProvider to get accessibility tree
-            val uri = Uri.parse("content://com.droidrun.portal/")
-            val command = JSONObject().apply {
-                put("action", "a11y_tree")
-            }
+            // Use ContentProvider to get combined state (a11y tree + phone state)
+            val uri = Uri.parse("content://com.droidrun.portal/state")
             
             val cursor = contentResolver.query(
                 uri,
                 null,
-                command.toString(),
+                null,
                 null,
                 null
             )
@@ -301,10 +298,10 @@ class MainActivity : AppCompatActivity() {
                     if (jsonResponse.getString("status") == "success") {
                         val data = jsonResponse.getString("data")
                         responseText.text = data
-                        statusText.text = "Element data received: ${data.length} characters"
-                        Toast.makeText(this, "Data received successfully!", Toast.LENGTH_SHORT).show()
+                        statusText.text = "Combined state data received: ${data.length} characters"
+                        Toast.makeText(this, "Combined state received successfully!", Toast.LENGTH_SHORT).show()
                         
-                        Log.d("DROIDRUN_MAIN", "Element data received: ${data.substring(0, Math.min(100, data.length))}...")
+                        Log.d("DROIDRUN_MAIN", "Combined state data received: ${data.substring(0, Math.min(100, data.length))}...")
                     } else {
                         val error = jsonResponse.getString("error")
                         statusText.text = "Error: $error"
@@ -315,7 +312,7 @@ class MainActivity : AppCompatActivity() {
             
         } catch (e: Exception) {
             statusText.text = "Error fetching data: ${e.message}"
-            Log.e("DROIDRUN_MAIN", "Error fetching element data: ${e.message}")
+            Log.e("DROIDRUN_MAIN", "Error fetching combined state data: ${e.message}")
         }
     }
     
