@@ -14,30 +14,10 @@ Droidrun Portal is an Android accessibility service that provides real-time visu
 
 ## ✨ Features
 
-### 🎨 Visual Overlay
-- Real-time highlighting of interactive UI elements
-- Heat map visualization (red to blue) indicating element freshness
-- Automatic depth ordering to handle overlapping elements
-- Element labeling with type and index information
-- Adjustable visibility through ADB commands
-
-### 🔍 Element Detection
+### 🔍 Element Detection with Visual Overlay
 - Identifies all interactive elements (clickable, checkable, editable, scrollable, and focusable)
 - Handles nested elements and scrollable containers
-- Tracks element persistence across screen updates
 - Assigns unique indices to interactive elements for reference
-- Can extract ALL visible elements (even non-interactive ones) with detailed properties
-
-### 📊 Data Collection
-- Exports element data in JSON format
-- Provides element properties including:
-  - Text content
-  - Class name
-  - Element index
-  - Bounding rectangle coordinates
-  - Element type (clickable, checkable, input, scrollable, focusable)
-- Accessible via ADB commands or file output
-- Separate commands for interactive elements only or complete screen hierarchy
 
 ## 🚀 Usage
 
@@ -48,53 +28,53 @@ Droidrun Portal is an Android accessibility service that provides real-time visu
 
 ### 💻 ADB Commands
 ```bash
-# Get interactive elements as JSON (clickable, checkable, etc.)
-adb shell am broadcast -a com.droidrun.portal.GET_ELEMENTS
-# Alternative command for interactive elements
-adb shell am broadcast -a com.droidrun.portal.GET_INTERACTIVE_ELEMENTS
+# Get accessibility tree as JSON
+adb shell content query --uri content://com.droidrun.portal/a11y_tree
 
-# Get ALL elements (even non-interactive ones) as JSON
-adb shell am broadcast -a com.droidrun.portal.GET_ALL_ELEMENTS
+# Get phone state as JSON
+adb shell content query --uri content://com.droidrun.portal/phone_state
 
-# Toggle overlay visibility
-adb shell am broadcast -a com.droidrun.portal.TOGGLE_OVERLAY --ez overlay_visible true/false
+# Get combined state (accessibility tree + phone state) as JSON
+adb shell content query --uri content://com.droidrun.portal/state
 
-# Reset element timestamps (useful for testing)
-adb shell am broadcast -a com.droidrun.portal.RETRIGGER_ELEMENTS
+# Test connection (ping)
+adb shell content query --uri content://com.droidrun.portal/ping
+
+# Keyboard text input (base64 encoded)
+adb shell content insert --uri content://com.droidrun.portal/keyboard/input --bind base64_text:s:"SGVsbG8gV29ybGQ="
+
+# Clear text via keyboard
+adb shell content insert --uri content://com.droidrun.portal/keyboard/clear
+
+# Send key event via keyboard (e.g., Enter key = 66)
+adb shell content insert --uri content://com.droidrun.portal/keyboard/key --bind key_code:i:66
 ```
 
 ### 📤 Data Output
-Element data is output in JSON format through ADB logs and is also saved to the app's external storage directory. The data can be captured using the included script:
+Element data is returned in JSON format through the ContentProvider queries. The response includes a status field and the requested data. All responses follow this structure:
 
-#### Using dump_view.sh (direct log capture)
-```bash
-# Get only interactive elements (default)
-./scripts/dump_view.sh
-
-# Get ALL elements including non-interactive ones
-./scripts/dump_view.sh -a
-
-# Specify mode explicitly
-./scripts/dump_view.sh -m all    # All elements
-./scripts/dump_view.sh -m clickable    # Only interactive elements
+```json
+{
+  "status": "success",
+  "data": "..."
+}
 ```
 
-JSON files will be saved to the output directory with the appropriate naming (elements.json or all_elements.json).
+For error responses:
+```json
+{
+  "status": "error", 
+  "error": "Error message"
+}
+```
 
 ## 🔧 Technical Details
-- Minimum Android API level: 24 (Android 7.0)
+- Minimum Android API level: 30 (Android 11.0)
 - Uses Android Accessibility Service API
 - Implements custom drawing overlay using Window Manager
 - Supports multi-window environments
 - Built with Kotlin
 
-## 💡 Use Cases
-- UI testing and verification
-- Developing accessibility tools
-- Creating UI automation scripts
-- Analyzing app UI structure
-- Learning about Android UI components
-- Complete screen content extraction for automation or analysis
 
 ## 🔄 Continuous Integration
 
