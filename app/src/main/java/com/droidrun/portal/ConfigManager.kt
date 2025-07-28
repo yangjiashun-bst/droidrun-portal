@@ -13,7 +13,7 @@ class ConfigManager private constructor(private val context: Context) {
         private const val PREFS_NAME = "droidrun_config"
         private const val KEY_OVERLAY_VISIBLE = "overlay_visible"
         private const val KEY_OVERLAY_OFFSET = "overlay_offset"
-        private const val DEFAULT_OFFSET = -128
+        private const val DEFAULT_OFFSET = 0
         
         @Volatile
         private var INSTANCE: ConfigManager? = null

@@ -27,7 +27,7 @@ class OverlayManager(private val context: Context) {
     private val isOverlayReady = AtomicBoolean(false)
     private var onReadyCallback: (() -> Unit)? = null
     
-    private var positionOffsetY = -128 // Default offset value
+    private var positionOffsetY = 0 // Default offset value
 
     companion object {
         private const val TAG = "TOPVIEW_OVERLAY"

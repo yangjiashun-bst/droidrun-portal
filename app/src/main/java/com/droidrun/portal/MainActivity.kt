@@ -44,7 +44,7 @@ class MainActivity : AppCompatActivity() {
     
     // Constants for the position offset slider
     companion object {
-        private const val DEFAULT_OFFSET = -128
+        private const val DEFAULT_OFFSET = 0
         private const val MIN_OFFSET = -256
         private const val MAX_OFFSET = 256
         private const val SLIDER_RANGE = MAX_OFFSET - MIN_OFFSET
