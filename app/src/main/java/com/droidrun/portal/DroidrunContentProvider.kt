@@ -25,6 +25,7 @@ class DroidrunContentProvider : ContentProvider() {
         private const val PING = 3
         private const val KEYBOARD_ACTIONS = 4
         private const val STATE = 5
+        private const val OVERLAY_OFFSET = 6
 
         private val uriMatcher = UriMatcher(UriMatcher.NO_MATCH).apply {
             addURI(AUTHORITY, "a11y_tree", A11Y_TREE)
@@ -32,6 +33,7 @@ class DroidrunContentProvider : ContentProvider() {
             addURI(AUTHORITY, "ping", PING)
             addURI(AUTHORITY, "keyboard/*", KEYBOARD_ACTIONS)
             addURI(AUTHORITY, "state", STATE)
+            addURI(AUTHORITY, "overlay_offset", OVERLAY_OFFSET)
         }
     }
 
@@ -71,6 +73,7 @@ class DroidrunContentProvider : ContentProvider() {
     override fun insert(uri: Uri, values: ContentValues?): Uri? {
         return when (uriMatcher.match(uri)) {
             KEYBOARD_ACTIONS -> executeKeyboardAction(uri, values)
+            OVERLAY_OFFSET -> updateOverlayOffset(uri, values)
             else -> "content://$AUTHORITY/result?status=error&message=${Uri.encode("Unsupported insert endpoint: ${uri.path}")}".toUri()
         }
     }
@@ -99,6 +102,32 @@ class DroidrunContentProvider : ContentProvider() {
 
         } catch (e: Exception) {
             Log.e(TAG, "Keyboard action execution failed", e)
+            return "content://$AUTHORITY/result?status=error&message=${Uri.encode("Execution failed: ${e.message}")}".toUri()
+        }
+    }
+
+    private fun updateOverlayOffset(uri: Uri, values: ContentValues?): Uri? {
+        if (values == null) {
+            return "content://$AUTHORITY/result?status=error&message=No values provided".toUri()
+        }
+
+        try {
+            val offset = values.getAsInteger("offset") 
+                ?: return "content://$AUTHORITY/result?status=error&message=No offset provided".toUri()
+
+            val accessibilityService = DroidrunAccessibilityService.getInstance()
+                ?: return "content://$AUTHORITY/result?status=error&message=Accessibility service not available".toUri()
+
+            val success = accessibilityService.setOverlayOffset(offset)
+            
+            return if (success) {
+                "content://$AUTHORITY/result?status=success&message=${Uri.encode("Overlay offset updated to $offset")}".toUri()
+            } else {
+                "content://$AUTHORITY/result?status=error&message=Failed to update overlay offset".toUri()
+            }
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to update overlay offset", e)
             return "content://$AUTHORITY/result?status=error&message=${Uri.encode("Execution failed: ${e.message}")}".toUri()
         }
     }
