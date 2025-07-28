@@ -28,6 +28,7 @@ class MainActivity : AppCompatActivity() {
     
     private lateinit var statusText: TextView
     private lateinit var responseText: TextView
+    private lateinit var versionText: TextView
     private lateinit var toggleOverlay: SwitchMaterial
     private lateinit var fetchButton: MaterialButton
     private lateinit var offsetSlider: SeekBar
@@ -57,6 +58,7 @@ class MainActivity : AppCompatActivity() {
         // Initialize UI elements
         statusText = findViewById(R.id.status_text)
         responseText = findViewById(R.id.response_text)
+        versionText = findViewById(R.id.version_text)
         fetchButton = findViewById(R.id.fetch_button)
         toggleOverlay = findViewById(R.id.toggle_overlay)
         offsetSlider = findViewById(R.id.offset_slider)
@@ -66,6 +68,9 @@ class MainActivity : AppCompatActivity() {
         accessibilityStatusText = findViewById(R.id.accessibility_status_text)
         accessibilityStatusContainer = findViewById(R.id.accessibility_status_container)
         accessibilityStatusCard = findViewById(R.id.accessibility_status_card)
+        
+        // Set app version
+        setAppVersion()
         
         // Configure the offset slider and input
         setupOffsetSlider()
@@ -426,6 +431,17 @@ class MainActivity : AppCompatActivity() {
                 "Error opening accessibility settings",
                 Toast.LENGTH_SHORT
             ).show()
+        }
+    }
+
+    private fun setAppVersion() {
+        try {
+            val packageInfo = packageManager.getPackageInfo(packageName, 0)
+            val version = packageInfo.versionName
+            versionText.text = "Version: $version"
+        } catch (e: Exception) {
+            Log.e("DROIDRUN_MAIN", "Error getting app version: ${e.message}")
+            versionText.text = "Version: N/A"
         }
     }
 } 
