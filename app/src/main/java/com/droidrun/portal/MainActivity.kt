@@ -39,6 +39,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var accessibilityStatusContainer: View
     private lateinit var accessibilityStatusCard: com.google.android.material.card.MaterialCardView
     
+    // Socket server UI elements
+    private lateinit var socketPortInput: TextInputEditText
+    private lateinit var socketPortInputLayout: TextInputLayout
+    private lateinit var socketServerStatus: TextView
+    private lateinit var adbForwardCommand: TextView
+    
     // Flag to prevent infinite update loops
     private var isProgrammaticUpdate = false
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -69,12 +75,21 @@ class MainActivity : AppCompatActivity() {
         accessibilityStatusContainer = findViewById(R.id.accessibility_status_container)
         accessibilityStatusCard = findViewById(R.id.accessibility_status_card)
         
+        // Initialize socket server UI elements
+        socketPortInput = findViewById(R.id.socket_port_input)
+        socketPortInputLayout = findViewById(R.id.socket_port_input_layout)
+        socketServerStatus = findViewById(R.id.socket_server_status)
+        adbForwardCommand = findViewById(R.id.adb_forward_command)
+        
         // Set app version
         setAppVersion()
         
         // Configure the offset slider and input
         setupOffsetSlider()
         setupOffsetInput()
+        
+        // Configure socket server controls
+        setupSocketServerControls()
         
         fetchButton.setOnClickListener {
             fetchElementData()
@@ -92,6 +107,7 @@ class MainActivity : AppCompatActivity() {
         // Check initial accessibility status and sync UI
         updateAccessibilityStatusIndicator()
         syncUIWithAccessibilityService()
+        updateSocketServerStatus()
     }
     
     override fun onResume() {
@@ -99,6 +115,7 @@ class MainActivity : AppCompatActivity() {
         // Update the accessibility status indicator when app resumes
         updateAccessibilityStatusIndicator()
         syncUIWithAccessibilityService()
+        updateSocketServerStatus()
     }
     
     private fun syncUIWithAccessibilityService() {
@@ -431,6 +448,96 @@ class MainActivity : AppCompatActivity() {
                 "Error opening accessibility settings",
                 Toast.LENGTH_SHORT
             ).show()
+        }
+    }
+
+    private fun setupSocketServerControls() {
+        // Initialize with ConfigManager values
+        val configManager = ConfigManager.getInstance(this)
+        
+        // Set default port value
+        isProgrammaticUpdate = true
+        socketPortInput.setText(configManager.socketServerPort.toString())
+        isProgrammaticUpdate = false
+        
+        // Port input listener
+        socketPortInput.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            
+            override fun afterTextChanged(s: Editable?) {
+                if (isProgrammaticUpdate) return
+                
+                try {
+                    val portText = s.toString()
+                    if (portText.isNotEmpty()) {
+                        val port = portText.toIntOrNull()
+                        if (port != null && port in 1..65535) {
+                            socketPortInputLayout.error = null
+                            updateSocketServerPort(port)
+                        } else {
+                            socketPortInputLayout.error = "Port must be between 1-65535"
+                        }
+                    } else {
+                        socketPortInputLayout.error = null
+                    }
+                } catch (e: Exception) {
+                    socketPortInputLayout.error = "Invalid port number"
+                }
+            }
+        })
+        
+        // Update initial UI state
+        updateSocketServerStatus()
+        updateAdbForwardCommand()
+    }
+    
+
+    
+    private fun updateSocketServerPort(port: Int) {
+        try {
+            val configManager = ConfigManager.getInstance(this)
+            configManager.socketServerPort = port
+            
+            statusText.text = "Socket server port updated to: $port"
+            updateAdbForwardCommand()
+            
+            Log.d("DROIDRUN_MAIN", "Socket server port updated: $port")
+        } catch (e: Exception) {
+            statusText.text = "Error updating socket server port: ${e.message}"
+            Log.e("DROIDRUN_MAIN", "Error updating socket server port: ${e.message}")
+        }
+    }
+    
+    private fun updateSocketServerStatus() {
+        try {
+            val accessibilityService = DroidrunAccessibilityService.getInstance()
+            if (accessibilityService != null) {
+                val status = accessibilityService.getSocketServerStatus()
+                socketServerStatus.text = status
+            } else {
+                socketServerStatus.text = "Service not available"
+            }
+        } catch (e: Exception) {
+            Log.e("DROIDRUN_MAIN", "Error updating socket server status: ${e.message}")
+            socketServerStatus.text = "Error"
+        }
+    }
+    
+    private fun updateAdbForwardCommand() {
+        try {
+            val accessibilityService = DroidrunAccessibilityService.getInstance()
+            if (accessibilityService != null) {
+                val command = accessibilityService.getAdbForwardCommand()
+                adbForwardCommand.text = command
+            } else {
+                val configManager = ConfigManager.getInstance(this)
+                val port = configManager.socketServerPort
+                adbForwardCommand.text = "adb forward tcp:$port tcp:$port"
+            }
+        } catch (e: Exception) {
+            Log.e("DROIDRUN_MAIN", "Error updating ADB forward command: ${e.message}")
+            adbForwardCommand.text = "Error"
         }
     }
 
