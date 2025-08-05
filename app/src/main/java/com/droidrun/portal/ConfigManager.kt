@@ -13,7 +13,10 @@ class ConfigManager private constructor(private val context: Context) {
         private const val PREFS_NAME = "droidrun_config"
         private const val KEY_OVERLAY_VISIBLE = "overlay_visible"
         private const val KEY_OVERLAY_OFFSET = "overlay_offset"
+        private const val KEY_SOCKET_SERVER_ENABLED = "socket_server_enabled"
+        private const val KEY_SOCKET_SERVER_PORT = "socket_server_port"
         private const val DEFAULT_OFFSET = 0
+        private const val DEFAULT_SOCKET_PORT = 8080
         
         @Volatile
         private var INSTANCE: ConfigManager? = null
@@ -41,10 +44,26 @@ class ConfigManager private constructor(private val context: Context) {
             sharedPrefs.edit().putInt(KEY_OVERLAY_OFFSET, value).apply()
         }
     
+    // Socket server enabled
+    var socketServerEnabled: Boolean
+        get() = sharedPrefs.getBoolean(KEY_SOCKET_SERVER_ENABLED, true)
+        set(value) {
+            sharedPrefs.edit().putBoolean(KEY_SOCKET_SERVER_ENABLED, value).apply()
+        }
+    
+    // Socket server port
+    var socketServerPort: Int
+        get() = sharedPrefs.getInt(KEY_SOCKET_SERVER_PORT, DEFAULT_SOCKET_PORT)
+        set(value) {
+            sharedPrefs.edit().putInt(KEY_SOCKET_SERVER_PORT, value).apply()
+        }
+    
     // Listener interface for configuration changes
     interface ConfigChangeListener {
         fun onOverlayVisibilityChanged(visible: Boolean)
         fun onOverlayOffsetChanged(offset: Int)
+        fun onSocketServerEnabledChanged(enabled: Boolean)
+        fun onSocketServerPortChanged(port: Int)
     }
     
     private val listeners = mutableSetOf<ConfigChangeListener>()
@@ -67,8 +86,23 @@ class ConfigManager private constructor(private val context: Context) {
         listeners.forEach { it.onOverlayOffsetChanged(offset) }
     }
     
+    fun setSocketServerEnabledWithNotification(enabled: Boolean) {
+        socketServerEnabled = enabled
+        listeners.forEach { it.onSocketServerEnabledChanged(enabled) }
+    }
+    
+    fun setSocketServerPortWithNotification(port: Int) {
+        socketServerPort = port
+        listeners.forEach { it.onSocketServerPortChanged(port) }
+    }
+    
     // Bulk configuration update
-    fun updateConfiguration(overlayVisible: Boolean? = null, overlayOffset: Int? = null) {
+    fun updateConfiguration(
+        overlayVisible: Boolean? = null, 
+        overlayOffset: Int? = null,
+        socketServerEnabled: Boolean? = null,
+        socketServerPort: Int? = null
+    ) {
         val editor = sharedPrefs.edit()
         var hasChanges = false
         
@@ -82,25 +116,41 @@ class ConfigManager private constructor(private val context: Context) {
             hasChanges = true
         }
         
+        socketServerEnabled?.let {
+            editor.putBoolean(KEY_SOCKET_SERVER_ENABLED, it)
+            hasChanges = true
+        }
+        
+        socketServerPort?.let {
+            editor.putInt(KEY_SOCKET_SERVER_PORT, it)
+            hasChanges = true
+        }
+        
         if (hasChanges) {
             editor.apply()
             
             // Notify listeners
             overlayVisible?.let { listeners.forEach { listener -> listener.onOverlayVisibilityChanged(it) } }
             overlayOffset?.let { listeners.forEach { listener -> listener.onOverlayOffsetChanged(it) } }
+            socketServerEnabled?.let { listeners.forEach { listener -> listener.onSocketServerEnabledChanged(it) } }
+            socketServerPort?.let { listeners.forEach { listener -> listener.onSocketServerPortChanged(it) } }
         }
     }
     
     // Get all configuration as a data class
     data class Configuration(
         val overlayVisible: Boolean,
-        val overlayOffset: Int
+        val overlayOffset: Int,
+        val socketServerEnabled: Boolean,
+        val socketServerPort: Int
     )
     
     fun getCurrentConfiguration(): Configuration {
         return Configuration(
             overlayVisible = overlayVisible,
-            overlayOffset = overlayOffset
+            overlayOffset = overlayOffset,
+            socketServerEnabled = socketServerEnabled,
+            socketServerPort = socketServerPort
         )
     }
 } 

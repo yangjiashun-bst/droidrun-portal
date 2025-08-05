@@ -18,7 +18,7 @@ import android.os.Handler
 import android.os.Looper
 import java.util.concurrent.atomic.AtomicBoolean
 
-class DroidrunAccessibilityService : AccessibilityService() {
+class DroidrunAccessibilityService : AccessibilityService(), ConfigManager.ConfigChangeListener {
 
     companion object {
         private const val TAG = "DroidrunA11yService"
@@ -36,6 +36,7 @@ class DroidrunAccessibilityService : AccessibilityService() {
     private val screenBounds = Rect()
     private lateinit var configManager: ConfigManager
     private val mainHandler = Handler(Looper.getMainLooper())
+    private var socketServer: SocketServer? = null
     
     // Periodic update state
     private var isInitialized = false
@@ -54,6 +55,11 @@ class DroidrunAccessibilityService : AccessibilityService() {
         
         // Initialize ConfigManager
         configManager = ConfigManager.getInstance(this)
+        configManager.addListener(this)
+        
+        // Initialize SocketServer
+        socketServer = SocketServer(this)
+        
         isInitialized = true
     }
 
@@ -89,6 +95,9 @@ class DroidrunAccessibilityService : AccessibilityService() {
 
         // Start periodic updates
         startPeriodicUpdates()
+        
+        // Start socket server if enabled
+        startSocketServerIfEnabled()
 
         Log.d(TAG, "Accessibility service connected and configured")
     }
@@ -402,15 +411,95 @@ class DroidrunAccessibilityService : AccessibilityService() {
         fun getNext(): Int = current++
     }
 
+    // Socket server management methods
+    private fun startSocketServerIfEnabled() {
+        if (configManager.socketServerEnabled) {
+            startSocketServer()
+        }
+    }
+
+    private fun startSocketServer() {
+        socketServer?.let { server ->
+            if (!server.isRunning()) {
+                val port = configManager.socketServerPort
+                val success = server.start(port)
+                if (success) {
+                    Log.i(TAG, "Socket server started on port $port")
+                } else {
+                    Log.e(TAG, "Failed to start socket server on port $port")
+                }
+            }
+        }
+    }
+
+    private fun stopSocketServer() {
+        socketServer?.let { server ->
+            if (server.isRunning()) {
+                server.stop()
+                Log.i(TAG, "Socket server stopped")
+            }
+        }
+    }
+
+    fun getSocketServerStatus(): String {
+        return socketServer?.let { server ->
+            if (server.isRunning()) {
+                "Running on port ${server.getPort()}"
+            } else {
+                "Stopped"
+            }
+        } ?: "Not initialized"
+    }
+
+    fun getAdbForwardCommand(): String {
+        val port = configManager.socketServerPort
+        return "adb forward tcp:$port tcp:$port"
+    }
+
+    // ConfigManager.ConfigChangeListener implementation
+    override fun onOverlayVisibilityChanged(visible: Boolean) {
+        // Already handled in setOverlayVisible method
+    }
+
+    override fun onOverlayOffsetChanged(offset: Int) {
+        // Already handled in setOverlayOffset method
+    }
+
+    override fun onSocketServerEnabledChanged(enabled: Boolean) {
+        if (enabled) {
+            startSocketServer()
+        } else {
+            stopSocketServer()
+        }
+    }
+
+    override fun onSocketServerPortChanged(port: Int) {
+        // Restart server with new port if it's running
+        socketServer?.let { server ->
+            if (server.isRunning()) {
+                server.stop()
+                val success = server.start(port)
+                if (success) {
+                    Log.i(TAG, "Socket server restarted on new port $port")
+                } else {
+                    Log.e(TAG, "Failed to restart socket server on new port $port")
+                }
+            }
+        }
+    }
+
     override fun onInterrupt() {
         Log.d(TAG, "Accessibility service interrupted")
         stopPeriodicUpdates()
+        stopSocketServer()
     }
 
     override fun onDestroy() {
         super.onDestroy()
         stopPeriodicUpdates()
+        stopSocketServer()
         clearElementList()
+        configManager.removeListener(this)
         instance = null
         Log.d(TAG, "Accessibility service destroyed")
     }

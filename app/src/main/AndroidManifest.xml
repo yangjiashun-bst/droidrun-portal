@@ -6,6 +6,9 @@
     <!-- Permission to draw over other apps -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     
+    <!-- Permission for socket communication -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    
     <!-- Define a custom permission for secure broadcast communication -->
     <permission
         android:name="com.droidrun.portal.SEND_INPUT_DATA"
