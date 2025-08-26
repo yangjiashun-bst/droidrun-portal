@@ -268,29 +268,17 @@ class DroidrunContentProvider : ContentProvider() {
     }
 
     private fun performKeyboardInputBase64(values: ContentValues): String {
-        val keyboardIME = DroidrunKeyboardIME.getInstance()
-            ?: return "error: DroidrunKeyboardIME not active or available"
-
-        // Check if keyboard has input connection
-        if (!keyboardIME.hasInputConnection()) {
-            return "error: No input connection available - keyboard may not be focused on an input field"
-        }
-
-        val base64Text = values.getAsString("base64_text")
-            ?: return "error: No base64_text provided"
-
-        return try {
-            if (keyboardIME.inputB64Text(base64Text)) {
-                val decoded = android.util.Base64.decode(base64Text, android.util.Base64.DEFAULT)
-                val decodedText = String(decoded, Charsets.UTF_8)
-                "success: Base64 text input via keyboard - '$decodedText'"
-            } else {
-                "error: Failed to input base64 text via keyboard"
-            }
-        } catch (e: Exception) {
-            "error: Invalid base64 encoding: ${e.message}"
+        val base64Text = values.getAsString("base64_text") ?: return "error: no text provided"
+        val append = values.getAsBoolean("append") ?: false
+    
+        return if (DroidrunKeyboardIME.getInstance() != null) {
+            val ok = DroidrunKeyboardIME.getInstance()!!.inputB64Text(base64Text, append)
+            if (ok) "success: input done (append=$append)" else "error: input failed"
+        } else {
+            "error: IME not active"
         }
     }
+    
 
     private fun performKeyboardClear(): String {
         val keyboardIME = DroidrunKeyboardIME.getInstance()

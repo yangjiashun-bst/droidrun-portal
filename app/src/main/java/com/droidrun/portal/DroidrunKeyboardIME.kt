@@ -47,42 +47,37 @@ class DroidrunKeyboardIME : InputMethodService() {
     /**
      * Direct method to input text from Base64 without using broadcasts
      */
-    fun inputB64Text(base64Text: String): Boolean {
+    fun inputB64Text(base64Text: String, append: Boolean = false): Boolean {
         return try {
             val decoded = Base64.decode(base64Text, Base64.DEFAULT)
             val text = String(decoded, Charsets.UTF_8)
-            inputText(text)
+            inputText(text, append)
         } catch (e: Exception) {
             Log.e(TAG, "Error decoding base64 for direct input", e)
             false
         }
     }
-
-    fun inputHexText(hexText: String): Boolean {
+    
+    fun inputText(text: String, append: Boolean = false): Boolean {
         return try {
-            // Remove any whitespace or separators
-            val cleanHex = hexText.replace("\\s".toRegex(), "").replace(":", "").replace("-", "")
-            
-            // Check if hex string has even length
-            if (cleanHex.length % 2 != 0) {
-                Log.e(TAG, "Invalid hex string length: ${cleanHex.length}")
-                return false
+            val ic = currentInputConnection
+            if (ic != null) {
+                if (!append) {
+                    clearText()
+                }
+                ic.commitText(text, 0)
+                Log.d(TAG, "Text input successful: $text (append=$append)")
+                true
+            } else {
+                Log.w(TAG, "No input connection available for text input")
+                false
             }
-            
-            // Convert hex to byte array
-            val bytes = ByteArray(cleanHex.length / 2)
-            for (i in bytes.indices) {
-                val index = i * 2
-                bytes[i] = cleanHex.substring(index, index + 2).toInt(16).toByte()
-            }
-            
-            val text = String(bytes, Charsets.UTF_8)
-            inputText(text)
         } catch (e: Exception) {
-            Log.e(TAG, "Error decoding hex for direct input", e)
+            Log.e(TAG, "Error in text input", e)
             false
         }
     }
+    
 
     /**
      * Direct method to clear text without using broadcasts
