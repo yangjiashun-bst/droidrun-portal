@@ -17,6 +17,13 @@
     <!-- Use our custom permission -->
     <uses-permission android:name="com.droidrun.portal.SEND_INPUT_DATA" />
 
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"

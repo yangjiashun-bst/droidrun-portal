@@ -19,6 +19,9 @@ import androidx.core.net.toUri
 import android.os.Bundle
 import com.droidrun.portal.model.ElementNode
 import com.droidrun.portal.model.PhoneState
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.content.pm.ResolveInfo
 
 class DroidrunContentProvider : ContentProvider() {
     companion object {
@@ -320,39 +323,43 @@ class DroidrunContentProvider : ContentProvider() {
         }
     }
 
-    // ---------------------------
-    // New: return installed packages as JSON
-    // ---------------------------
+    
     private fun getInstalledPackagesJson(): String {
         val pm = context?.packageManager ?: return createErrorResponse("PackageManager unavailable")
-
+    
         return try {
-            val packages: List<PackageInfo> = pm.getInstalledPackages(0)
+            val mainIntent = Intent(Intent.ACTION_MAIN, null).apply {
+                addCategory(Intent.CATEGORY_LAUNCHER)
+            }
+            
+            val resolvedApps: List<ResolveInfo> = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                pm.queryIntentActivities(mainIntent, PackageManager.ResolveInfoFlags.of(0L))
+            } else {
+                @Suppress("DEPRECATION")
+                pm.queryIntentActivities(mainIntent, 0)
+            }
+
             val arr = JSONArray()
 
-            for (pkg in packages) {
-                val obj = JSONObject()
-                val packageName = pkg.packageName
-                val appInfo: ApplicationInfo = pkg.applicationInfo
-
-                // Best-effort label lookup (may be blank if package visibility restricted)
-                val label = try {
-                    val lbl = pm.getApplicationLabel(appInfo)
-                    lbl?.toString() ?: ""
-                } catch (e: Exception) {
-                    ""
+            for (resolveInfo in resolvedApps) {
+                val pkgInfo = try {
+                    pm.getPackageInfo(resolveInfo.activityInfo.packageName, 0)
+                } catch (e: PackageManager.NameNotFoundException) {
+                    continue 
                 }
 
-                obj.put("packageName", packageName)
-                obj.put("label", if (label.isNullOrBlank()) JSONObject.NULL else label)
-                obj.put("versionName", pkg.versionName ?: JSONObject.NULL)
+                val appInfo = resolveInfo.activityInfo.applicationInfo
+                val obj = JSONObject()
 
-                // versionCode handling across API levels
+                obj.put("packageName", pkgInfo.packageName)
+                obj.put("label", resolveInfo.loadLabel(pm).toString())
+                obj.put("versionName", pkgInfo.versionName ?: JSONObject.NULL)
+
                 val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    pkg.longVersionCode
+                    pkgInfo.longVersionCode
                 } else {
                     @Suppress("DEPRECATION")
-                    pkg.versionCode.toLong()
+                    pkgInfo.versionCode.toLong()
                 }
                 obj.put("versionCode", versionCode)
 
@@ -361,17 +368,17 @@ class DroidrunContentProvider : ContentProvider() {
 
                 arr.put(obj)
             }
-
+    
             val root = JSONObject()
             root.put("status", "success")
             root.put("count", arr.length())
             root.put("packages", arr)
-
+    
             root.toString()
-
+    
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to enumerate packages", e)
-            createErrorResponse("Failed to enumerate packages: ${e.message}")
+            Log.e(TAG, "Failed to enumerate launchable apps", e)
+            createErrorResponse("Failed to enumerate launchable apps: ${e.message}")
         }
     }
 
