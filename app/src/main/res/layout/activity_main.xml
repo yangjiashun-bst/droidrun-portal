@@ -90,7 +90,7 @@
                                 android:layout_width="24dp"
                                 android:layout_height="24dp"
                                 android:src="@android:drawable/ic_dialog_info"
-                                android:tint="@color/white" />
+                                app:tint="@color/white" />
 
                             <TextView
                                 android:id="@+id/status_text"
@@ -133,7 +133,7 @@
                                 android:layout_width="20dp"
                                 android:layout_height="20dp"
                                 android:src="@android:drawable/ic_menu_manage"
-                                android:tint="@color/white" />
+                                app:tint="@color/white" />
                                 
                             <TextView
                                 android:layout_width="wrap_content"
@@ -220,7 +220,7 @@
                             android:layout_width="32dp"
                             android:layout_height="32dp"
                             android:src="@android:drawable/ic_menu_manage"
-                            android:tint="@color/droidrun_primary"
+                            app:tint="@color/droidrun_primary"
                             android:layout_marginEnd="12dp"/>
                         
                         <TextView
@@ -393,7 +393,7 @@
                             android:layout_width="32dp"
                             android:layout_height="32dp"
                             android:src="@android:drawable/ic_dialog_email"
-                            android:tint="@color/droidrun_primary"
+                            app:tint="@color/droidrun_primary"
                             android:layout_marginEnd="12dp"/>
                         
                         <TextView
@@ -523,7 +523,7 @@
                             android:layout_width="32dp"
                             android:layout_height="32dp"
                             android:src="@android:drawable/ic_menu_info_details"
-                            android:tint="@color/droidrun_primary"
+                            app:tint="@color/droidrun_primary"
                             android:layout_marginEnd="12dp"/>
 
                         <TextView

@@ -3,12 +3,16 @@ package com.droidrun.portal
 import android.content.ContentProvider
 import android.content.ContentValues
 import android.content.UriMatcher
+import android.content.pm.ApplicationInfo
+import android.content.pm.PackageInfo
 import android.database.Cursor
 import android.database.MatrixCursor
 import android.graphics.Rect
 import android.net.Uri
+import android.os.Build
 import android.util.Log
 import android.view.accessibility.AccessibilityNodeInfo
+import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 import androidx.core.net.toUri
@@ -26,6 +30,7 @@ class DroidrunContentProvider : ContentProvider() {
         private const val KEYBOARD_ACTIONS = 4
         private const val STATE = 5
         private const val OVERLAY_OFFSET = 6
+        private const val PACKAGES = 7
 
         private val uriMatcher = UriMatcher(UriMatcher.NO_MATCH).apply {
             addURI(AUTHORITY, "a11y_tree", A11Y_TREE)
@@ -34,6 +39,7 @@ class DroidrunContentProvider : ContentProvider() {
             addURI(AUTHORITY, "keyboard/*", KEYBOARD_ACTIONS)
             addURI(AUTHORITY, "state", STATE)
             addURI(AUTHORITY, "overlay_offset", OVERLAY_OFFSET)
+            addURI(AUTHORITY, "packages", PACKAGES) // <-- new endpoint
         }
     }
 
@@ -57,6 +63,7 @@ class DroidrunContentProvider : ContentProvider() {
                 PHONE_STATE -> getPhoneState()
                 PING -> createSuccessResponse("pong")
                 STATE -> getCombinedState()
+                PACKAGES -> getInstalledPackagesJson()
                 else -> createErrorResponse("Unknown endpoint: ${uri.path}")
             }
             
@@ -313,18 +320,72 @@ class DroidrunContentProvider : ContentProvider() {
         }
     }
 
+    // ---------------------------
+    // New: return installed packages as JSON
+    // ---------------------------
+    private fun getInstalledPackagesJson(): String {
+        val pm = context?.packageManager ?: return createErrorResponse("PackageManager unavailable")
+
+        return try {
+            val packages: List<PackageInfo> = pm.getInstalledPackages(0)
+            val arr = JSONArray()
+
+            for (pkg in packages) {
+                val obj = JSONObject()
+                val packageName = pkg.packageName
+                val appInfo: ApplicationInfo = pkg.applicationInfo
+
+                // Best-effort label lookup (may be blank if package visibility restricted)
+                val label = try {
+                    val lbl = pm.getApplicationLabel(appInfo)
+                    lbl?.toString() ?: ""
+                } catch (e: Exception) {
+                    ""
+                }
+
+                obj.put("packageName", packageName)
+                obj.put("label", if (label.isNullOrBlank()) JSONObject.NULL else label)
+                obj.put("versionName", pkg.versionName ?: JSONObject.NULL)
+
+                // versionCode handling across API levels
+                val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    pkg.longVersionCode
+                } else {
+                    @Suppress("DEPRECATION")
+                    pkg.versionCode.toLong()
+                }
+                obj.put("versionCode", versionCode)
+
+                val isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+                obj.put("isSystemApp", isSystem)
+
+                arr.put(obj)
+            }
+
+            val root = JSONObject()
+            root.put("status", "success")
+            root.put("count", arr.length())
+            root.put("packages", arr)
+
+            root.toString()
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to enumerate packages", e)
+            createErrorResponse("Failed to enumerate packages: ${e.message}")
+        }
+    }
 
     private fun createSuccessResponse(data: String): String {
         return JSONObject().apply {
             put("status", "success")
-            put("data", data)
+            put("message", data)
         }.toString()
     }
 
     private fun createErrorResponse(error: String): String {
         return JSONObject().apply {
             put("status", "error")
-            put("error", error)
+            put("message", error)
         }.toString()
     }
 
