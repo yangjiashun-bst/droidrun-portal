@@ -22,6 +22,7 @@ class OverlayManager(private val context: Context) {
     private val handler = Handler(Looper.getMainLooper())
     private val elementRects = mutableListOf<ElementInfo>()
     private var isOverlayVisible = false
+    private var isDrawingEnabled = true // Flag to temporarily disable drawing
     private var positionCorrectionOffset = 0 // Default correction offset
     private var elementIndexCounter = 0 // Counter to assign indexes to elements
     private val isOverlayReady = AtomicBoolean(false)
@@ -226,6 +227,33 @@ class OverlayManager(private val context: Context) {
     fun getElementCount(): Int {
         return elementRects.size
     }
+    
+    // Methods to temporarily disable/enable overlay drawing for clean screenshots
+    fun setDrawingEnabled(enabled: Boolean) {
+        isDrawingEnabled = enabled
+        refreshOverlay()
+    }
+    
+    fun isDrawingEnabled(): Boolean {
+        return isDrawingEnabled
+    }
+    
+    // Convenience method to temporarily hide overlay for clean screenshots
+    fun withOverlayHidden(action: () -> Unit) {
+        val wasEnabled = isDrawingEnabled
+        try {
+            setDrawingEnabled(false)
+            // Small delay to ensure the overlay is redrawn without elements
+            handler.postDelayed({
+                action()
+                setDrawingEnabled(wasEnabled)
+            }, 50)
+        } catch (e: Exception) {
+            // Ensure we restore state even if action fails
+            setDrawingEnabled(wasEnabled)
+            throw e
+        }
+    }
 
     inner class OverlayView(context: Context) : FrameLayout(context) {
         private val boxPaint = Paint().apply {
@@ -265,8 +293,12 @@ class OverlayManager(private val context: Context) {
                     return
                 }
 
-                if (!isOverlayVisible) {
-                    Log.d(TAG, "Overlay not visible, skipping draw")
+                if (!isOverlayVisible || !isDrawingEnabled) {
+                    if (!isDrawingEnabled) {
+                        Log.d(TAG, "Overlay drawing disabled, skipping draw")
+                    } else {
+                        Log.d(TAG, "Overlay not visible, skipping draw")
+                    }
                     return
                 }
 

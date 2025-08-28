@@ -173,6 +173,10 @@ class SocketServer(private val accessibilityService: DroidrunAccessibilityServic
                 Log.d(TAG, "Processing /ping request")
                 createSuccessResponse("pong")
             }
+            path.startsWith("/screenshot") -> {
+                Log.d(TAG, "Processing /screenshot request")
+                getScreenshot(path)
+            }
             else -> {
                 Log.w(TAG, "Unknown endpoint requested: $path")
                 createErrorResponse("Unknown endpoint: $path")
@@ -389,6 +393,47 @@ class SocketServer(private val accessibilityService: DroidrunAccessibilityServic
         } catch (e: Exception) {
             Log.e(TAG, "Failed to get combined state", e)
             createErrorResponse("Failed to get combined state: ${e.message}")
+        }
+    }
+
+    private fun getScreenshot(path: String): String {
+        return try {
+            // Parse query parameters to check if overlay should be hidden
+            val hideOverlay = if (path.contains("?")) {
+                val queryString = path.substringAfter("?")
+                val params = queryString.split("&").associate { param ->
+                    val parts = param.split("=", limit = 2)
+                    if (parts.size == 2) {
+                        Uri.decode(parts[0]) to Uri.decode(parts[1])
+                    } else {
+                        parts[0] to "true"
+                    }
+                }
+                // Default is true (hide overlay), can be disabled with ?hideOverlay=false
+                params["hideOverlay"]?.lowercase() != "false"
+            } else {
+                true // Default: hide overlay
+            }
+            
+            Log.d(TAG, "Taking screenshot... (hideOverlay: $hideOverlay)")
+            val screenshotFuture = accessibilityService.takeScreenshotBase64(hideOverlay)
+            
+            // Wait for screenshot with timeout (5 seconds)
+            val screenshotBase64 = screenshotFuture.get(5, java.util.concurrent.TimeUnit.SECONDS)
+            
+            if (screenshotBase64.startsWith("error:")) {
+                Log.e(TAG, "Screenshot failed: $screenshotBase64")
+                createErrorResponse(screenshotBase64.substring(7)) // Remove "error:" prefix
+            } else {
+                Log.d(TAG, "Screenshot captured successfully, base64 length: ${screenshotBase64.length}")
+                createSuccessResponse(screenshotBase64)
+            }
+        } catch (e: java.util.concurrent.TimeoutException) {
+            Log.e(TAG, "Screenshot timeout", e)
+            createErrorResponse("Screenshot timeout - operation took too long")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to get screenshot", e)
+            createErrorResponse("Failed to get screenshot: ${e.message}")
         }
     }
 
