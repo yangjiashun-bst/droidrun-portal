@@ -9,7 +9,7 @@ android {
 
     defaultConfig {
         applicationId = "com.droidrun.portal"
-        minSdk = 30
+        minSdk = 28
         targetSdk = 34
         versionCode = 35
         versionName = "0.3.5"
